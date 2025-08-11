@@ -31,7 +31,7 @@ function sanitizeToCode(text) {
     blocks.push({ lang, body });
   }
   if (blocks.length > 0) {
-    const preferredOrder = ['javascript', 'js', 'jsx', 'html'];
+    const preferredOrder = ['javascript', 'js', 'jsx', 'tsx', 'react'];
     for (const pref of preferredOrder) {
       const found = blocks.find((b) => b.lang.includes(pref));
       if (found) return found.body.trim();
@@ -51,27 +51,52 @@ function sanitizeToCode(text) {
 function buildGenerationInstruction(userPrompt, styleMode) {
   const styleBlock = styleMode === 'css'
     ? [
-      'STYLING MODE: Plain CSS. Do NOT use Tailwind. Define CSS rules and inject them via a <style> element appended to <head> from your JS code.',
-      'You may create class names and apply them to your elements. Ensure all CSS needed is present in the injected <style> string.',
+      'STYLING MODE: Plain CSS. Use inline styles or CSS-in-JS. Do NOT use external stylesheets.',
+      'Apply styles directly to elements using the style prop or create styled components.',
     ].join('\n')
     : [
-      'STYLING MODE: Tailwind. Use Tailwind utility classes. No custom CSS unless absolutely necessary.',
+      'STYLING MODE: Tailwind CSS. Use Tailwind utility classes for styling.',
+      'Use modern Tailwind classes for beautiful, responsive designs.',
     ].join('\n');
 
   return [
-    'You generate code for a browser sandbox that injects code into <script> with React (UMD globals) and Tailwind available.',
-    'RUNTIME AVAILABLE:',
-    '- window.React and window.ReactDOM (React 18 UMD), no imports.',
-    '- TailwindCSS via CDN, no build step.',
+    'You are a React code generator that creates working React functional components.',
+    '',
+    'CRITICAL REQUIREMENTS:',
+    '- Generate ONLY a single React functional component',
+    '- Use proper ES6 import syntax: import React, { useState, useEffect } from "react"',
+    '- Return JSX syntax, NOT React.createElement',
+    '- Component must be exported as default export',
+    '- Ensure all React hooks are properly imported',
+    '- Make the component self-contained and functional',
+    '',
+    'CODE STRUCTURE:',
+    'import React, { useState, useEffect } from "react";',
+    '',
+    'function ComponentName() {',
+    '  // Component logic here',
+    '  const [state, setState] = useState(initialValue);',
+    '  ',
+    '  return (',
+    '    <div className="tailwind-classes">',
+    '      {/* Component JSX */}',
+    '    </div>',
+    '  );',
+    '}',
+    '',
+    'export default ComponentName;',
+    '',
     styleBlock,
     '',
-    'STRICT FORMAT REQUIREMENTS:',
-    '- Return ONLY raw JavaScript. No Markdown, no explanations, no code fences.',
-    '- Prefer React.createElement or JSX. If JSX is used, still return just the code.',
-    '- If you define a component, also MOUNT it by calling ReactDOM.createRoot(document.getElementById("app")).render(<Component/> or React.createElement(Component)).',
-    '- Do not reference files, bundlers, or external assets that require imports.',
+    'IMPORTANT NOTES:',
+    '- Always use proper JSX syntax',
+    '- Ensure proper React hooks import',
+    '- Make the UI beautiful, interactive and functional',
+    '- Handle all user interactions and state changes properly',
+    '- Use semantic HTML elements and proper accessibility',
+    '- Component should be production-ready',
     '',
-    'Task:',
+    'User Request:',
     userPrompt,
   ].join('\n');
 }
@@ -102,17 +127,27 @@ async function generateCode(prompt, modelOverride, options = {}) {
 
 async function fixCode(code, error, modelOverride, options = {}) {
   const repairPrompt = [
-    'You fix code for the same browser sandbox environment with React (UMD globals) and Tailwind available.',
-    options.styleMode === 'css'
-      ? 'STYLING MODE: Plain CSS. Avoid Tailwind; inject CSS via <style> if needed.'
-      : 'STYLING MODE: Tailwind utilities preferred.',
-    'Return ONLY the corrected JavaScript and ensure it MOUNTS to #app with ReactDOM.createRoot(...) if React is used.',
+    'You are fixing a React component that has errors. Fix the code to work properly.',
     '',
-    'Code:',
+    'REQUIREMENTS:',
+    '- Fix the specific error mentioned below',
+    '- Use proper ES6 import syntax: import React, { useState, useEffect } from "react"',
+    '- Return JSX syntax, NOT React.createElement',
+    '- Ensure all React hooks are properly imported',
+    '- Component must be exported as default export',
+    '- Return ONLY the corrected JavaScript code with proper formatting',
+    '',
+    options.styleMode === 'css'
+      ? 'STYLING: Use inline styles or CSS-in-JS.'
+      : 'STYLING: Use Tailwind CSS utility classes.',
+    '',
+    'ORIGINAL CODE:',
     code,
     '',
-    'Error:',
+    'ERROR TO FIX:',
     error,
+    '',
+    'Return the complete corrected code with proper imports and exports:'
   ].filter(Boolean).join('\n');
   return generateCode(repairPrompt, modelOverride, { styleMode: options.styleMode || 'tailwind' });
 }

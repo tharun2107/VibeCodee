@@ -34,16 +34,157 @@ function useSandbox(htmlSource) {
   const [logs, setLogs] = useState([]);
 
   const iframeHtml = useMemo(() => {
-    const libs = `\n      <!-- Tailwind via CDN -->\n      <script src=\"https://cdn.tailwindcss.com\"><\/script>\n      <!-- React 18 UMD -->\n      <script crossorigin src=\"https://unpkg.com/react@18/umd/react.development.js\"><\/script>\n      <script crossorigin src=\"https://unpkg.com/react-dom@18/umd/react-dom.development.js\"><\/script>\n      <!-- Babel standalone for JSX support -->\n      <script src=\"https://unpkg.com/@babel/standalone/babel.min.js\"><\/script>\n    `;
+    const libs = `
+      <!-- Tailwind via CDN -->
+      <script src="https://cdn.tailwindcss.com"></script>
+      <!-- React 18 UMD -->
+      <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+      <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+      <!-- Babel standalone for JSX support -->
+      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    `;
 
-    const bootstrap = `\n      <script>\n        (function(){\n          function send(level, args){\n            try {\n              parent.postMessage({ type: 'console', level, args: Array.from(args).map(a => {\n                try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e){ return String(a); }\n              }) }, '*');\n            } catch(_){}\n          }\n          ['log','warn','error','info'].forEach(k=>{\n            const orig = console[k];\n            console[k] = function(){ send(k, arguments); try{ orig && orig.apply(console, arguments); }catch(_){} };\n          });\n          window.addEventListener('error', function(e){\n            send('error', [ (e && e.message) + ' @ ' + (e && e.filename) + ':' + (e && e.lineno) ]);\n          });\n          window.addEventListener('unhandledrejection', function(e){\n            const r = e && e.reason;\n            send('error', ['UnhandledRejection: ' + (r && (r.stack || r.message) || r)]);\n          });\n\n          function stripImportsExports(src){\n            try {\n              return String(src)\n                .replace(/^\s*import\s+[^;]+;?\s*$/gm, '')\n                .replace(/^\s*export\s+default\s+/gm, 'window.__defaultExport = ')\n                .replace(/^\s*export\s+\{[^}]*\};?\s*$/gm, '');\n            } catch(_) { return String(src); }\n          }\n\n          function executeUserCode(code){\n            try {\n              console.log('About to execute code (first 200 chars):', String(code || '').slice(0, 200));\n              var finalCode = String(code || '');\n              var usedBabel = false;\n              try {\n                if (window.Babel) {\n                  finalCode = stripImportsExports(finalCode);\n                  const result = window.Babel.transform(finalCode, { presets: ['react'] });\n                  finalCode = result.code || finalCode;\n                  usedBabel = true;\n                  console.log('Transpiled with Babel');\n                }\n              } catch (babelErr) {\n                console.warn('Babel transform failed, running raw:', babelErr && (babelErr.message || babelErr));\n              }\n              const s = document.createElement('script');\n              s.type = usedBabel ? 'text/javascript' : 'module';\n              s.textContent = String(finalCode || '');\n              s.addEventListener('error', (ev) => {\n                console.error('Script error:', ev && (ev.message || ev.type));\n              });\n              document.body.appendChild(s);\n            } catch (err) {\n              console.error('Injection error:', err && (err.stack || err.message) || err);\n            }\n          }\n\n          window.addEventListener('message', function(e){\n            try {\n              if (e && e.data && e.data.type === 'execute') {\n                executeUserCode(e.data.code || '');\n              }\n            } catch(err){\n              console.error('Message handling error:', err && (err.stack || err.message) || err);\n            }\n          });\n        })();\n      <\/script>\n    `;
-    return `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>\n      <style>html,body,#app{height:100%;margin:0}</style>\n      ${libs}\n    </head><body class=\"p-2\">\n      <div id=\"app\"></div>\n      ${bootstrap}\n    </body></html>`;
+    const bootstrap = `
+      <script>
+        (function(){
+          function send(level, args){
+            try {
+              parent.postMessage({ 
+                type: 'console', 
+                level, 
+                args: Array.from(args).map(a => {
+                  try { 
+                    return typeof a === 'object' && a !== null ? JSON.stringify(a) : String(a); 
+                  } catch(e){ 
+                    return String(a); 
+                  }
+                }),
+                timestamp: Date.now()
+              }, '*');
+            } catch(_){}
+          }
+          
+          ['log','warn','error','info'].forEach(k=>{
+            const orig = console[k];
+            console[k] = function(){ 
+              send(k, arguments); 
+              try{ orig && orig.apply(console, arguments); }catch(_){} 
+            };
+          });
+          
+          window.addEventListener('error', function(e){
+            send('error', ['Runtime Error: ' + e.message + ' @ ' + e.filename + ':' + e.lineno]);
+          });
+          
+          window.addEventListener('unhandledrejection', function(e){
+            const r = e && e.reason;
+            send('error', ['Unhandled Promise Rejection: ' + (r && (r.stack || r.message) || r)]);
+          });
+
+          function executeUserCode(code){
+            try {
+              console.log('Executing user code...');
+              
+              // Clear previous content
+              const rootEl = document.getElementById('root');
+              const appEl = document.getElementById('app');
+              if (rootEl) rootEl.innerHTML = '';
+              if (appEl) appEl.innerHTML = '';
+              
+              // Ensure React is available
+              if (!window.React || !window.ReactDOM) {
+                console.error('React or ReactDOM not available');
+                return;
+              }
+              
+              let finalCode = String(code || '');
+              
+              try {
+                // Transform JSX using Babel
+                if (window.Babel) {
+                  const result = window.Babel.transform(finalCode, { 
+                    presets: ['react'],
+                    plugins: ['transform-react-jsx']
+                  });
+                  finalCode = result.code || finalCode;
+                  console.log('Code transpiled with Babel');
+                }
+              } catch (babelErr) {
+                console.warn('Babel transform failed:', babelErr.message);
+              }
+              
+              // Execute the code in a safe context
+              try {
+                // Create a new script element to execute the code
+                const script = document.createElement('script');
+                script.textContent = finalCode;
+                document.head.appendChild(script);
+                console.log('Code executed successfully');
+              } catch (execError) {
+                console.error('Code execution failed:', execError.message);
+                // Show error in DOM
+                const target = document.getElementById('root') || document.getElementById('app');
+                if (target) {
+                  target.innerHTML = '<div style="color: red; padding: 20px; font-family: monospace; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; margin: 20px;">' +
+                    '<h3 style="margin: 0 0 10px 0; color: #dc2626;">Execution Error</h3>' +
+                    '<pre style="margin: 0; white-space: pre-wrap;">' + execError.message + '</pre>' +
+                  '</div>';
+                }
+              }
+              
+            } catch (err) {
+              console.error('Code injection error:', err.message);
+              const target = document.getElementById('root') || document.getElementById('app');
+              if (target) {
+                target.innerHTML = '<div style="color: red; padding: 20px; font-family: monospace; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; margin: 20px;">' +
+                  '<h3 style="margin: 0 0 10px 0; color: #dc2626;">Execution Error</h3>' +
+                  '<pre style="margin: 0; white-space: pre-wrap;">' + err.message + '</pre>' +
+                '</div>';
+              }
+            }
+          }
+
+          window.addEventListener('message', function(e){
+            try {
+              if (e && e.data && e.data.type === 'execute') {
+                executeUserCode(e.data.code || '');
+              }
+            } catch(err){
+              console.error('Message handling error:', err.message);
+            }
+          });
+        })();
+      </script>
+    `;
+    
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
+    #app, #root { min-height: 100%; }
+    * { box-sizing: border-box; }
+  </style>
+  ${libs}
+</head>
+<body>
+  <div id="root"></div>
+  <div id="app"></div>
+  ${bootstrap}
+</body>
+</html>`;
   }, []);
 
   useEffect(() => {
     const handler = (e) => {
       if (e?.data?.type === 'console') {
-        setLogs((prev) => [...prev, { level: e.data.level, args: e.data.args }]);
+        setLogs((prev) => [...prev.slice(-99), { 
+          level: e.data.level, 
+          args: e.data.args, 
+          timestamp: e.data.timestamp || Date.now() 
+        }]);
       }
     };
     window.addEventListener('message', handler);
@@ -54,13 +195,19 @@ function useSandbox(htmlSource) {
     setLogs([]);
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    doc.open();
-    doc.write(iframeHtml);
-    doc.close();
-    const cw = iframe.contentWindow;
-    if (cw) {
-      cw.postMessage({ type: 'execute', code: htmlSource || '' }, '*');
+    
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(iframeHtml);
+      doc.close();
+      
+      const cw = iframe.contentWindow;
+      if (cw) {
+        setTimeout(() => {
+          cw.postMessage({ type: 'execute', code: htmlSource || '' }, '*');
+        }, 100);
+      }
     }
   }, [iframeHtml, htmlSource]);
 
@@ -68,22 +215,114 @@ function useSandbox(htmlSource) {
 }
 
 function App() {
-  const [prompt, setPrompt] = useState('Create a React button component with TailwindCSS');
-  const [code, setCode] = useState(`const root = document.getElementById('app');\nroot.innerHTML = '<h1>Hello VibeCode</h1>';`);
+  const [prompt, setPrompt] = useState('Create a beautiful React todo app with drag & drop functionality using Tailwind CSS');
+  const [code, setCode] = useState(`import React, { useState } from 'react';
+
+function TodoApp() {
+  const [todos, setTodos] = useState([]);
+  const [newTodo, setNewTodo] = useState('');
+
+  const addTodo = () => {
+    if (newTodo.trim()) {
+      setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }]);
+      setNewTodo('');
+    }
+  };
+
+  const toggleTodo = (id) => {
+    setTodos(todos.map(todo => 
+      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+    ));
+  };
+
+  const deleteTodo = (id) => {
+    setTodos(todos.filter(todo => todo.id !== id));
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">Todo App</h1>
+        
+        <div className="flex mb-4">
+          <input
+            type="text"
+            value={newTodo}
+            onChange={(e) => setNewTodo(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && addTodo()}
+            placeholder="Add a new todo..."
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={addTodo}
+            className="px-6 py-2 bg-blue-500 text-white rounded-r-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Add
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {todos.map(todo => (
+            <div key={todo.id} className="flex items-center p-3 bg-gray-50 rounded-lg">
+              <input
+                type="checkbox"
+                checked={todo.completed}
+                onChange={() => toggleTodo(todo.id)}
+                className="mr-3 h-4 w-4 text-blue-600 rounded"
+              />
+              <span className={\`flex-1 \${todo.completed ? 'line-through text-gray-500' : 'text-gray-800'}\`}>
+                {todo.text}
+              </span>
+              <button
+                onClick={() => deleteTodo(todo.id)}
+                className="ml-3 px-3 py-1 text-red-500 hover:bg-red-50 rounded"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {todos.length === 0 && (
+            <p className="text-gray-500 text-center py-8">No todos yet. Add one above!</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Render the component
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(TodoApp));
+
+export default TodoApp;`);
+  
   const [jwt, setJwt] = useState('');
   const [model, setModel] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
-  const [useSandpack, setUseSandpack] = useState(true);
-  const [styleMode, setStyleMode] = useState('tailwind'); // 'tailwind' | 'css'
+  const [useSandpack, setUseSandpack] = useState(true); // Default to Sandpack
+  const [styleMode, setStyleMode] = useState('tailwind');
+  const [activeTab, setActiveTab] = useState('preview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const { iframeRef, logs, clearLogs } = useSandbox(code);
-
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
   const handleGenerate = useCallback(async () => {
-    if (!jwt) { alert('Please paste your JWT token'); return; }
-    setLoading(true); setErrorText(''); clearLogs();
+    if (!jwt) { 
+      alert('Please enter your JWT token first!'); 
+      return; 
+    }
+    
+    if (!prompt.trim()) {
+      alert('Please enter a prompt describing what you want to build!');
+      return;
+    }
+    
+    setLoading(true); 
+    setErrorText(''); 
+    clearLogs();
+    
     try {
       const res = await fetch(`${apiBase}/generate`, {
         method: 'POST',
@@ -91,238 +330,492 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${jwt}`,
         },
-        body: JSON.stringify({ prompt, model: model || undefined, styleMode }),
+        body: JSON.stringify({ 
+          prompt, 
+          model: model || undefined, 
+          styleMode 
+        }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Generate failed');
       const raw = data.code || '';
       const cleaned = extractCodeBlock(raw);
+      
       if (cleaned !== raw) {
-        console.log('Sanitized generated code from markdown to raw JS.');
+        console.log('Extracted code from markdown fences');
       }
-      console.log('Received code (first 200 chars):', String(cleaned).slice(0, 200));
+      
       setCode(cleaned);
+      setActiveTab('preview');
+      
     } catch (e) {
-      setErrorText(String(e.message || e));
+      const errorMsg = e.message || 'Generation failed';
+      setErrorText(errorMsg);
+      console.error('Generation error:', errorMsg);
     } finally {
       setLoading(false);
     }
   }, [apiBase, clearLogs, jwt, model, prompt, styleMode]);
 
   const handleFix = useCallback(async () => {
-    if (!jwt) { alert('Please paste your JWT token'); return; }
-    setLoading(true); setErrorText('');
+    if (!jwt) { 
+      alert('Please enter your JWT token first!'); 
+      return; 
+    }
+    
+    if (!code.trim()) {
+      alert('No code to fix! Generate some code first.');
+      return;
+    }
+    
+    setLoading(true); 
+    setErrorText('');
+    
     try {
       const lastError = [...logs].reverse().find(l => l.level === 'error');
-      const errMsg = lastError ? lastError.args.join(' ') : 'No explicit error captured; improve code robustness.';
+      const errMsg = lastError ? 
+        lastError.args.join(' ') : 
+        'No explicit error found. Please improve code quality and fix any potential issues.';
+      
       const res = await fetch(`${apiBase}/fix`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${jwt}`,
         },
-        body: JSON.stringify({ code, error: errMsg, model: model || undefined, styleMode }),
+        body: JSON.stringify({ 
+          code, 
+          error: errMsg, 
+          model: model || undefined, 
+          styleMode 
+        }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Fix failed');
       const raw = data.code || '';
       const cleaned = extractCodeBlock(raw);
+      
       if (cleaned !== raw) {
-        console.log('Sanitized fixed code from markdown to raw JS.');
+        console.log('Extracted fixed code from markdown fences');
       }
-      console.log('Received fixed code (first 200 chars):', String(cleaned).slice(0, 200));
+      
       setCode(cleaned);
+      setActiveTab('preview');
+      
     } catch (e) {
-      setErrorText(String(e.message || e));
+      const errorMsg = e.message || 'Fix failed';
+      setErrorText(errorMsg);
+      console.error('Fix error:', errorMsg);
     } finally {
       setLoading(false);
     }
   }, [apiBase, code, jwt, model, logs, styleMode]);
 
+  // Transform code for Sandpack
   const sandpackFiles = useMemo(() => {
-    const userCode = code || '';
-    const rawModule = `export default atob('${btoa(unescape(encodeURIComponent(userCode)))}')`;
+    let transformedCode = code;
+    
+    // Ensure proper imports
+    if (!transformedCode.includes('import React')) {
+      transformedCode = `import React, { useState, useEffect } from 'react';\n\n${transformedCode}`;
+    }
+    
+    // Remove any rendering code at the end for Sandpack
+    transformedCode = transformedCode.replace(/\/\/ Render the component[\s\S]*$/, '');
+    transformedCode = transformedCode.replace(/const root = ReactDOM\.createRoot[\s\S]*$/, '');
+    transformedCode = transformedCode.replace(/ReactDOM\.render[\s\S]*$/, '');
+    
+    // Ensure proper export
+    if (!transformedCode.includes('export default')) {
+      // Find the main component name
+      const componentMatch = transformedCode.match(/function\s+(\w+)/);
+      if (componentMatch) {
+        const componentName = componentMatch[1];
+        if (!transformedCode.includes(`export default ${componentName}`)) {
+          transformedCode += `\n\nexport default ${componentName};`;
+        }
+      } else {
+        // If no function component found, wrap the code
+        transformedCode = `import React, { useState, useEffect } from 'react';
+
+export default function App() {
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-bold mb-4">Generated App</h1>
+      <pre className="bg-gray-100 p-4 rounded text-xs overflow-auto">
+        {${JSON.stringify(code)}}
+      </pre>
+    </div>
+  );
+}`;
+      }
+    }
+    
     return {
-      '/index.html': {
-        code: `<!doctype html>\n<html><head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<script src=\"https://cdn.tailwindcss.com\"><\/script>\n<style>\n/* Fallback Tailwind classes for common utilities */\n.bg-blue-500 { background-color: #3b82f6; }\n.bg-blue-600 { background-color: #2563eb; }\n.bg-blue-700 { background-color: #1d4ed8; }\n.bg-green-500 { background-color: #10b981; }\n.bg-red-500 { background-color: #ef4444; }\n.bg-yellow-500 { background-color: #eab308; }\n.bg-purple-500 { background-color: #8b5cf6; }\n.bg-pink-500 { background-color: #ec4899; }\n.bg-slate-900 { background-color: #0f172a; }\n.bg-white { background-color: #ffffff; }\n.bg-black { background-color: #000000; }\n.text-white { color: #ffffff; }\n.text-black { color: #000000; }\n.text-blue-600 { color: #2563eb; }\n.text-purple-400 { color: #c084fc; }\n.text-red-400 { color: #f87171; }\n.text-yellow-400 { color: #facc15; }\n.font-bold { font-weight: 700; }\n.font-semibold { font-weight: 600; }\n.p-2 { padding: 0.5rem; }\n.p-4 { padding: 1rem; }\n.p-6 { padding: 1.5rem; }\n.p-8 { padding: 2rem; }\n.px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }\n.px-4 { padding-left: 1rem; padding-right: 1rem; }\n.px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }\n.px-8 { padding-left: 2rem; padding-right: 2rem; }\n.py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }\n.py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }\n.py-4 { padding-top: 1rem; padding-bottom: 1rem; }\n.m-2 { margin: 0.5rem; }\n.m-4 { margin: 1rem; }\n.m-6 { margin: 1.5rem; }\n.mx-auto { margin-left: auto; margin-right: auto; }\n.my-4 { margin-top: 1rem; margin-bottom: 1rem; }\n.rounded { border-radius: 0.25rem; }\n.rounded-lg { border-radius: 0.5rem; }\n.rounded-xl { border-radius: 0.75rem; }\n.rounded-2xl { border-radius: 1rem; }\n.rounded-full { border-radius: 9999px; }\n.border { border-width: 1px; }\n.border-2 { border-width: 2px; }\n.border-solid { border-style: solid; }\n.border-blue-500 { border-color: #3b82f6; }\n.border-purple-500 { border-color: #8b5cf6; }\n.border-red-500 { border-color: #ef4444; }\n.border-yellow-500 { border-color: #eab308; }\n.shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }\n.shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }\n.shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }\n.shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }\n.hover\\:bg-blue-700:hover { background-color: #1d4ed8; }\n.hover\\:bg-purple-700:hover { background-color: #7c3aed; }\n.hover\\:bg-emerald-700:hover { background-color: #047857; }\n.hover\\:bg-teal-700:hover { background-color: #0f766e; }\n.hover\\:scale-105:hover { transform: scale(1.05); }\n.hover\\:shadow-xl:hover { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }\n.focus\\:outline-none:focus { outline: 2px solid transparent; outline-offset: 2px; }\n.focus\\:ring-2:focus { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5); }\n.focus\\:ring-purple-500:focus { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5); }\n.focus\\:border-transparent:focus { border-color: transparent; }\n.transition-all { transition-property: all; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }\n.transition-colors { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }\n.duration-200 { transition-duration: 200ms; }\n.duration-300 { transition-duration: 300ms; }\n.disabled\\:opacity-50:disabled { opacity: 0.5; }\n.disabled\\:cursor-not-allowed:disabled { cursor: not-allowed; }\n.flex { display: flex; }\n.inline-flex { display: inline-flex; }\n.grid { display: grid; }\n.hidden { display: none; }\n.block { display: block; }\n.inline-block { display: inline-block; }\n.items-center { align-items: center; }\n.justify-center { justify-content: center; }\n.justify-between { justify-content: space-between; }\n.flex-col { flex-direction: column; }\n.flex-row { flex-direction: row; }\n.flex-wrap { flex-wrap: wrap; }\n.gap-2 { gap: 0.5rem; }\n.gap-3 { gap: 0.75rem; }\n.gap-4 { gap: 1rem; }\n.gap-6 { gap: 1.5rem; }\n.w-full { width: 100%; }\n.w-10 { width: 2.5rem; }\n.w-72 { width: 18rem; }\n.w-56 { width: 14rem; }\n.h-10 { height: 2.5rem; }\n.h-40 { height: 10rem; }\n.h-48 { height: 12rem; }\n.h-screen { height: 100vh; }\n.w-screen { width: 100vw; }\n.min-h-0 { min-height: 0px; }\n.text-sm { font-size: 0.875rem; line-height: 1.25rem; }\n.text-xs { font-size: 0.75rem; line-height: 1rem; }\n.text-lg { font-size: 1.125rem; line-height: 1.75rem; }\n.text-2xl { font-size: 1.5rem; line-height: 2rem; }\n.text-4xl { font-size: 2.25rem; line-height: 2.5rem; }\n.font-mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace; }\n.space-y-2 > * + * { margin-top: 0.5rem; }\n.space-y-1 > * + * { margin-top: 0.25rem; }\n.overflow-auto { overflow: auto; }\n.overflow-hidden { overflow: hidden; }\n.resize-none { resize: none; }\n.backdrop-blur-sm { backdrop-filter: blur(4px); }\n.bg-clip-text { background-clip: text; }\n.text-transparent { color: transparent; }\n.animate-spin { animation: spin 1s linear infinite; }\n.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }\n@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }\n@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }\n<\/style>\n<title>VibeCode Preview<\/title>\n</head><body>\n<!-- Provide both containers for compatibility -->\n<div id=\"root\"></div>\n<div id=\"app\"></div>\n<script>\n// Debug Tailwind loading\nconsole.log('Tailwind CDN script loaded:', typeof window.tailwind !== 'undefined');\nif (typeof window.tailwind === 'undefined') {\n  console.warn('Tailwind CDN not loaded, using fallback CSS');\n}\n<\/script>\n</body></html>`
+      '/App.js': {
+        code: transformedCode
       },
       '/index.js': {
-        code: `import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nconst mountEl = document.getElementById('root') || document.getElementById('app');\nconst root = createRoot(mountEl);\nroot.render(React.createElement(App));\n`,
+        code: `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const rootElement = document.getElementById('root');
+const root = ReactDOM.createRoot(rootElement);
+
+root.render(<App />);`
       },
-      '/prelude.js': {
-        code: `import React from 'react';\nimport * as ReactDOMClient from 'react-dom/client';\n// Expose globals so generated code that references window.React/ReactDOM works\nif (typeof window !== 'undefined') {\n  window.React = React;\n  window.ReactDOM = ReactDOMClient;\n}\nexport {};\n`
-      },
-      '/__raw.js': { code: rawModule },
-      '/App.jsx': {
-        code: `import React, { useEffect } from 'react';\nimport './prelude.js';\nimport raw from './__raw.js';\n\nexport default function App(){\n  useEffect(() => {\n    try {\n      const ensure = (id) => { let el = document.getElementById(id); if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); } return el; };\n      ensure('root'); ensure('app');\n      if (!window.ReactDOM) { console.warn('ReactDOM global missing; ensure prelude loaded.'); }\n      console.log('About to execute user code with Tailwind available:', typeof window.tailwind !== 'undefined');\n      const fn = new Function(raw);\n      fn();\n    } catch(e){ console.error('Runtime error while executing raw code:', e); }\n  }, []);\n  return React.createElement('div', { className: 'p-4 text-sm text-slate-700' }, 'Running generated script...');\n}\n`,
-      },
-      '/UserCode.jsx': { code: userCode },
+      '/public/index.html': {
+        code: `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeCode Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>`
+      }
     };
   }, [code]);
 
   return (
-    <div className="h-screen w-screen grid grid-rows-[auto,1fr,auto] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
-      {/* Professional Header */}
-      <div className="flex items-center gap-6 p-6 border-b border-purple-700/50 bg-black/20 backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
-            <span className="text-white font-bold text-lg">VC</span>
-          </div>
-          <div className="font-bold text-2xl bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            VibeCode AI
-          </div>
-        </div>
-
-        <div className="flex-1 flex items-center gap-4">
-          <input
-            className="flex-1 bg-black/30 border border-purple-500/30 rounded-xl px-4 py-3 text-sm placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-            placeholder="Describe what you want to build..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-
-          <input
-            className="w-72 bg-black/30 border border-purple-500/30 rounded-xl px-4 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-            placeholder="JWT Token"
-            value={jwt}
-            onChange={(e) => setJwt(e.target.value)}
-          />
-
-          <input
-            className="w-56 bg-black/30 border border-purple-500/30 rounded-xl px-4 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-            placeholder="Model (optional)"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
-        </div>
-
-        <div className="flex items-center gap-4">
-          <label className="text-xs flex items-center gap-2 px-3 py-2 bg-black/30 border border-purple-500/30 rounded-xl">
-            <input type="checkbox" checked={useSandpack} onChange={(e) => setUseSandpack(e.target.checked)} className="rounded" />
-            Sandpack
-          </label>
-
-          <select
-            className="text-xs bg-black/30 border border-purple-500/30 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-            value={styleMode}
-            onChange={(e) => setStyleMode(e.target.value)}
+    <div className="h-screen w-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
+      {/* Left Sidebar - Prompt & Controls */}
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300 bg-black/30 backdrop-blur-sm border-r border-purple-500/20 flex flex-col`}>
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-purple-500/20 flex items-center gap-3">
+          <button 
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 hover:bg-purple-500/20 rounded-lg transition-colors"
           >
-            <option value="tailwind">Tailwind</option>
-            <option value="css">Plain CSS</option>
-          </select>
-
-          <button
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm px-8 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
-            onClick={handleGenerate}
-            disabled={loading}
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Generating...
-              </div>
-            ) : (
-              'Generate Code'
-            )}
+            <div className="w-5 h-5 flex flex-col justify-center space-y-1">
+              <div className="w-full h-0.5 bg-purple-300"></div>
+              <div className="w-full h-0.5 bg-purple-300"></div>
+              <div className="w-full h-0.5 bg-purple-300"></div>
+            </div>
           </button>
-
-          <button
-            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm px-6 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
-            onClick={handleFix}
-            disabled={loading}
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Fixing...
+          {!sidebarCollapsed && (
+            <>
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">VC</span>
               </div>
-            ) : (
-              'AI Fix'
-            )}
-          </button>
+              <div className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                VibeCode
+              </div>
+            </>
+          )}
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="grid grid-cols-2 min-h-0 gap-6 p-6">
-        {useSandpack ? (
-          <div className="col-span-2 flex flex-col min-h-0 bg-black/20 backdrop-blur-sm rounded-2xl border border-purple-500/20 shadow-2xl overflow-hidden">
-            <SandpackProvider template="react" theme={nightOwl} files={sandpackFiles} options={{ activeFile: '/UserCode.jsx' }}>
-              <SandpackLayout style={{ height: '100%' }}>
-                <div className="flex-1 min-h-0">
-                  <SandpackCodeEditor showTabs={true} showLineNumbers={true} wrapContent={true} style={{ height: '50vh' }} />
-                </div>
-                <div className="flex-1 min-h-0">
-                  <SandpackPreview style={{ height: '40vh' }} />
-                </div>
-              </SandpackLayout>
-              <div className="border-t border-purple-500/20">
-                <SandpackConsole maxMessageCount={200} />
-              </div>
-            </SandpackProvider>
-          </div>
-        ) : (
+        {!sidebarCollapsed && (
           <>
-              <div className="flex flex-col min-h-0 bg-black/20 backdrop-blur-sm rounded-2xl border border-purple-500/20 shadow-2xl">
-                <div className="px-6 py-4 text-sm font-semibold bg-black/30 border-b border-purple-500/20 rounded-t-2xl flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="ml-2">Code Editor</span>
-                </div>
-                <textarea
-                  className="flex-1 p-6 font-mono text-sm bg-transparent text-white outline-none resize-none rounded-b-2xl"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Your generated code will appear here..."
+            {/* Prompt Section */}
+            <div className="p-4 border-b border-purple-500/20">
+              <label className="block text-sm font-semibold text-purple-300 mb-2">
+                Describe your app
+              </label>
+              <textarea
+                className="w-full h-24 bg-black/40 border border-purple-500/30 rounded-xl px-3 py-2 text-sm placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                placeholder="e.g., Create a modern todo app with drag & drop..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+              />
+            </div>
+
+            {/* API Configuration */}
+            <div className="p-4 space-y-3 border-b border-purple-500/20">
+              <div>
+                <label className="block text-xs font-semibold text-purple-300 mb-1">
+                  JWT Token *
+                </label>
+                <input
+                  type="password"
+                  className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Enter your JWT token"
+                  value={jwt}
+                  onChange={(e) => setJwt(e.target.value)}
                 />
               </div>
-
-              <div className="flex flex-col min-h-0 bg-black/20 backdrop-blur-sm rounded-2xl border border-purple-500/20 shadow-2xl">
-                <div className="px-6 py-4 text-sm font-semibold bg-black/30 border-b border-purple-500/20 rounded-t-2xl flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="ml-2">Live Preview</span>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-300 mb-1">
+                    Model
+                  </label>
+                  <input
+                    className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Optional"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  />
                 </div>
-                <iframe ref={iframeRef} title="preview" className="flex-1 bg-white rounded-b-2xl" />
+                
+                <div>
+                  <label className="block text-xs font-semibold text-purple-300 mb-1">
+                    Style
+                  </label>
+                  <select
+                    className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={styleMode}
+                    onChange={(e) => setStyleMode(e.target.value)}
+                  >
+                    <option value="tailwind">Tailwind</option>
+                    <option value="css">Plain CSS</option>
+                  </select>
+                </div>
               </div>
+
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="sandpack" 
+                  checked={useSandpack} 
+                  onChange={(e) => setUseSandpack(e.target.checked)} 
+                  className="rounded"
+                />
+                <label htmlFor="sandpack" className="text-xs text-purple-300">
+                  Use Sandpack (CodeSandbox)
+                </label>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-4 space-y-3">
+              <button
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
+                onClick={handleGenerate}
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Generating...
+                  </div>
+                ) : (
+                  '✨ Generate Code'
+                )}
+              </button>
+
+              <button
+                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
+                onClick={handleFix}
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Fixing...
+                  </div>
+                ) : (
+                  '🔧 AI Fix'
+                )}
+              </button>
+            </div>
+
+            {/* Error Display */}
+            {errorText && (
+              <div className="mx-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                <div className="text-red-400 text-xs">
+                  <strong>Error:</strong> {errorText}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {/* Console Output */}
-      <div className="h-48 border-t border-purple-700/50 bg-black/20 backdrop-blur-sm overflow-auto">
-        <div className="px-6 py-4 text-sm font-semibold bg-black/30 border-b border-purple-500/20 flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            Console Output
-          </span>
-          <button className="text-xs text-purple-300 hover:text-purple-100 underline transition-colors" onClick={clearLogs}>Clear</button>
-        </div>
-        {!useSandpack ? (
-          <div className="p-6 space-y-2 text-xs font-mono">
-            {errorText && (
-              <div className="text-red-400 bg-red-900/20 p-3 rounded-lg border border-red-500/30">
-                <strong>Error:</strong> {errorText}
-              </div>
-            )}
-            {logs.map((l, i) => (
-              <div key={i} className={`p-2 rounded-lg ${l.level === 'error'
-                ? 'text-red-400 bg-red-900/20 border border-red-500/30'
-                : l.level === 'warn'
-                  ? 'text-yellow-400 bg-yellow-900/20 border border-yellow-500/30'
-                  : 'text-purple-300 bg-purple-900/20 border border-purple-500/30'
-                }`}>
-                <span className="font-semibold">[{l.level}]</span> {l.args.join(' ')}
-              </div>
-            ))}
-            {!logs.length && !errorText && (
-              <div className="text-purple-400/60 text-center py-8">No console output yet. Generate some code to see logs here.</div>
-            )}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {useSandpack ? (
+          /* Sandpack Layout */
+          <div className="flex-1 min-h-0">
+            <SandpackProvider 
+              template="react" 
+              theme={nightOwl} 
+              files={sandpackFiles} 
+              options={{ 
+                activeFile: '/App.js',
+                visibleFiles: ['/App.js'],
+                externalResources: [
+                  "https://cdn.tailwindcss.com"
+                ]
+              }}
+              customSetup={{
+                dependencies: {
+                  "react": "^18.0.0",
+                  "react-dom": "^18.0.0"
+                }
+              }}
+            >
+              <SandpackLayout style={{ height: '100%' }}>
+                <div className="flex-1 min-h-0 border-r border-purple-500/20">
+                  <SandpackCodeEditor
+                    showTabs={true}
+                    showLineNumbers={true}
+                    wrapContent={true}
+                    style={{ height: '100%' }}
+                    showInlineErrors={true}
+                    showNavigator={true}
+                  />
+                </div>
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <div className="flex-1 min-h-0 bg-white">
+                    <SandpackPreview
+                      style={{
+                        height: '100%',
+                        border: 'none',
+                        borderRadius: '0'
+                      }}
+                      showNavigator={true}
+                      showRefreshButton={true}
+                      showOpenInCodeSandbox={true}
+                    />
+                  </div>
+                  <div className="h-48 border-t border-purple-500/20 bg-black/10">
+                    <SandpackConsole
+                      maxMessageCount={100}
+                      showSyntaxError={true}
+                      showSetupProgress={false}
+                    />
+                  </div>
+                </div>
+              </SandpackLayout>
+            </SandpackProvider>
           </div>
         ) : (
-            <div className="text-xs text-purple-400/60 p-6 text-center">Using Sandpack console above.</div>
+          /* Custom Layout */
+          <>
+            {/* Code Editor */}
+            <div className="flex-1 min-h-0 flex">
+              <div className="flex-1 min-h-0 bg-black/20 backdrop-blur-sm border-r border-purple-500/20 flex flex-col">
+                <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-2">
+                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="ml-2 text-sm font-semibold">Code Editor</span>
+                </div>
+                <textarea
+                  className="flex-1 p-4 font-mono text-sm bg-transparent text-white outline-none resize-none"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="Your generated code will appear here..."
+                  spellCheck={false}
+                />
+              </div>
+
+              {/* Right Panel - Preview & Console */}
+              <div className="flex-1 min-h-0 flex flex-col bg-black/20 backdrop-blur-sm">
+                {/* Tab Headers */}
+                <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                        activeTab === 'preview' 
+                          ? 'bg-purple-500 text-white' 
+                          : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
+                      }`}
+                      onClick={() => setActiveTab('preview')}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      className={`px-3 py-1 text-xs rounded-lg transition-colors relative ${
+                        activeTab === 'console' 
+                          ? 'bg-purple-500 text-white' 
+                          : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
+                      }`}
+                      onClick={() => setActiveTab('console')}
+                    >
+                      Console
+                      {logs.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                          {logs.length > 9 ? '9+' : logs.length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content Area */}
+                <div className="flex-1 min-h-0">
+                  {activeTab === 'preview' ? (
+                    <iframe 
+                      ref={iframeRef} 
+                      title="preview" 
+                      className="w-full h-full bg-white" 
+                    />
+                  ) : (
+                    <div className="h-full overflow-auto">
+                      <div className="p-3 border-b border-purple-500/20 flex items-center justify-between">
+                        <span className="text-sm font-semibold flex items-center gap-2">
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                          Console Output ({logs.length})
+                        </span>
+                        <button 
+                          className="text-xs text-purple-300 hover:text-purple-100 underline transition-colors" 
+                          onClick={clearLogs}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="p-3 space-y-2 text-xs font-mono">
+                        {logs.length === 0 ? (
+                          <div className="text-purple-400/60 text-center py-8">
+                            No console output yet. Generate some code to see logs here.
+                          </div>
+                        ) : (
+                          logs.map((log, i) => (
+                            <div 
+                              key={i} 
+                              className={`p-2 rounded-lg border ${
+                                log.level === 'error'
+                                  ? 'text-red-400 bg-red-900/20 border-red-500/30'
+                                  : log.level === 'warn'
+                                    ? 'text-yellow-400 bg-yellow-900/20 border-yellow-500/30'
+                                    : 'text-purple-300 bg-purple-900/20 border-purple-500/30'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="font-semibold uppercase text-xs opacity-70">
+                                  [{log.level}]
+                                </span>
+                                <span className="flex-1">
+                                  {log.args.join(' ')}
+                                </span>
+                                {log.timestamp && (
+                                  <span className="text-xs opacity-50">
+                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
