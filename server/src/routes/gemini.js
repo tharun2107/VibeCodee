@@ -18,9 +18,9 @@ function auth(req, res, next) {
 
 // Generate code from prompt
 router.post('/generate', auth, async (req, res) => {
-  const { prompt, model } = req.body;
+  const { prompt, model, styleMode } = req.body;
   try {
-    const code = await generateCode(prompt, model);
+    const code = await generateCode(prompt, model, { styleMode });
     res.json({ code });
   } catch (err) {
     res.status(500).json({ error: 'Gemini API error', details: err.message });
@@ -29,9 +29,9 @@ router.post('/generate', auth, async (req, res) => {
 
 // Fix code using error
 router.post('/fix', auth, async (req, res) => {
-  const { code, error, model } = req.body;
+  const { code, error, model, styleMode } = req.body;
   try {
-    const fixedCode = await fixCode(code, error, model);
+    const fixedCode = await fixCode(code, error, model, { styleMode });
     res.json({ code: fixedCode });
   } catch (err) {
     res.status(500).json({ error: 'Gemini API error', details: err.message });

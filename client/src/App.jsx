@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
+import { SandpackProvider, SandpackLayout, SandpackCodeEditor, SandpackPreview, SandpackConsole } from '@codesandbox/sandpack-react';
+import { githubLight } from '@codesandbox/sandpack-themes';
 
 function extractCodeBlock(text) {
   if (!text) return '';
@@ -32,8 +34,10 @@ function useSandbox(htmlSource) {
   const [logs, setLogs] = useState([]);
 
   const iframeHtml = useMemo(() => {
-    const bootstrap = `\n      <script>\n        (function(){\n          function send(level, args){\n            try {\n              parent.postMessage({ type: 'console', level, args: Array.from(args).map(a => {\n                try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e){ return String(a); }\n              }) }, '*');\n            } catch(_){}\n          }\n          ['log','warn','error','info'].forEach(k=>{\n            const orig = console[k];\n            console[k] = function(){ send(k, arguments); try{ orig && orig.apply(console, arguments); }catch(_){} };\n          });\n          window.addEventListener('error', function(e){\n            send('error', [ (e && e.message) + ' @ ' + (e && e.filename) + ':' + (e && e.lineno) ]);\n          });\n          window.addEventListener('unhandledrejection', function(e){\n            const r = e && e.reason;\n            send('error', ['UnhandledRejection: ' + (r && (r.stack || r.message) || r)]);\n          });\n\n          function executeUserCode(code){\n            try {\n              console.log('About to execute code (first 200 chars):', String(code || '').slice(0, 200));\n              const s = document.createElement('script');\n              s.type = 'module';\n              s.textContent = String(code || '');\n              s.addEventListener('error', (ev) => {\n                console.error('Module script error:', ev && (ev.message || ev.type));\n              });\n              document.body.appendChild(s);\n            } catch (err) {\n              console.error('Injection error:', err && (err.stack || err.message) || err);\n            }\n          }\n\n          window.addEventListener('message', function(e){\n            try {\n              if (e && e.data && e.data.type === 'execute') {\n                executeUserCode(e.data.code || '');\n              }\n            } catch(err){\n              console.error('Message handling error:', err && (err.stack || err.message) || err);\n            }\n          });\n        })();\n      <\/script>\n    `;
-    return `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>\n      <style>html,body,#app{height:100%;margin:0}</style>\n    </head><body>\n      <div id=\"app\"></div>\n      ${bootstrap}\n    </body></html>`;
+    const libs = `\n      <!-- Tailwind via CDN -->\n      <script src=\"https://cdn.tailwindcss.com\"><\/script>\n      <!-- React 18 UMD -->\n      <script crossorigin src=\"https://unpkg.com/react@18/umd/react.development.js\"><\/script>\n      <script crossorigin src=\"https://unpkg.com/react-dom@18/umd/react-dom.development.js\"><\/script>\n      <!-- Babel standalone for JSX support -->\n      <script src=\"https://unpkg.com/@babel/standalone/babel.min.js\"><\/script>\n    `;
+
+    const bootstrap = `\n      <script>\n        (function(){\n          function send(level, args){\n            try {\n              parent.postMessage({ type: 'console', level, args: Array.from(args).map(a => {\n                try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e){ return String(a); }\n              }) }, '*');\n            } catch(_){}\n          }\n          ['log','warn','error','info'].forEach(k=>{\n            const orig = console[k];\n            console[k] = function(){ send(k, arguments); try{ orig && orig.apply(console, arguments); }catch(_){} };\n          });\n          window.addEventListener('error', function(e){\n            send('error', [ (e && e.message) + ' @ ' + (e && e.filename) + ':' + (e && e.lineno) ]);\n          });\n          window.addEventListener('unhandledrejection', function(e){\n            const r = e && e.reason;\n            send('error', ['UnhandledRejection: ' + (r && (r.stack || r.message) || r)]);\n          });\n\n          function stripImportsExports(src){\n            try {\n              return String(src)\n                .replace(/^\s*import\s+[^;]+;?\s*$/gm, '')\n                .replace(/^\s*export\s+default\s+/gm, 'window.__defaultExport = ')\n                .replace(/^\s*export\s+\{[^}]*\};?\s*$/gm, '');\n            } catch(_) { return String(src); }\n          }\n\n          function executeUserCode(code){\n            try {\n              console.log('About to execute code (first 200 chars):', String(code || '').slice(0, 200));\n              var finalCode = String(code || '');\n              var usedBabel = false;\n              try {\n                if (window.Babel) {\n                  finalCode = stripImportsExports(finalCode);\n                  const result = window.Babel.transform(finalCode, { presets: ['react'] });\n                  finalCode = result.code || finalCode;\n                  usedBabel = true;\n                  console.log('Transpiled with Babel');\n                }\n              } catch (babelErr) {\n                console.warn('Babel transform failed, running raw:', babelErr && (babelErr.message || babelErr));\n              }\n              const s = document.createElement('script');\n              s.type = usedBabel ? 'text/javascript' : 'module';\n              s.textContent = String(finalCode || '');\n              s.addEventListener('error', (ev) => {\n                console.error('Script error:', ev && (ev.message || ev.type));\n              });\n              document.body.appendChild(s);\n            } catch (err) {\n              console.error('Injection error:', err && (err.stack || err.message) || err);\n            }\n          }\n\n          window.addEventListener('message', function(e){\n            try {\n              if (e && e.data && e.data.type === 'execute') {\n                executeUserCode(e.data.code || '');\n              }\n            } catch(err){\n              console.error('Message handling error:', err && (err.stack || err.message) || err);\n            }\n          });\n        })();\n      <\/script>\n    `;
+    return `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>\n      <style>html,body,#app{height:100%;margin:0}</style>\n      ${libs}\n    </head><body class=\"p-2\">\n      <div id=\"app\"></div>\n      ${bootstrap}\n    </body></html>`;
   }, []);
 
   useEffect(() => {
@@ -70,6 +74,8 @@ function App() {
   const [model, setModel] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [useSandpack, setUseSandpack] = useState(true);
+  const [styleMode, setStyleMode] = useState('tailwind'); // 'tailwind' | 'css'
 
   const { iframeRef, logs, clearLogs } = useSandbox(code);
 
@@ -85,7 +91,7 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${jwt}`,
         },
-        body: JSON.stringify({ prompt, model: model || undefined }),
+        body: JSON.stringify({ prompt, model: model || undefined, styleMode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Generate failed');
@@ -101,7 +107,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [apiBase, clearLogs, jwt, model, prompt]);
+  }, [apiBase, clearLogs, jwt, model, prompt, styleMode]);
 
   const handleFix = useCallback(async () => {
     if (!jwt) { alert('Please paste your JWT token'); return; }
@@ -115,7 +121,7 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${jwt}`,
         },
-        body: JSON.stringify({ code, error: errMsg, model: model || undefined }),
+        body: JSON.stringify({ code, error: errMsg, model: model || undefined, styleMode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Fix failed');
@@ -131,7 +137,28 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [apiBase, code, jwt, model, logs]);
+  }, [apiBase, code, jwt, model, logs, styleMode]);
+
+  const sandpackFiles = useMemo(() => {
+    const userCode = code || '';
+    const rawModule = `export default atob('${btoa(unescape(encodeURIComponent(userCode)))}')`;
+    return {
+      '/index.html': {
+        code: `<!doctype html>\n<html><head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<script src=\"https://cdn.tailwindcss.com\"><\/script>\n<title>VibeCode Preview<\/title>\n</head><body>\n<!-- Provide both containers for compatibility -->\n<div id=\"root\"></div>\n<div id=\"app\"></div>\n</body></html>`
+      },
+      '/index.js': {
+        code: `import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nconst mountEl = document.getElementById('root') || document.getElementById('app');\nconst root = createRoot(mountEl);\nroot.render(React.createElement(App));\n`,
+      },
+      '/prelude.js': {
+        code: `import React from 'react';\nimport * as ReactDOMClient from 'react-dom/client';\n// Expose globals so generated code that references window.React/ReactDOM works\nif (typeof window !== 'undefined') {\n  window.React = React;\n  window.ReactDOM = ReactDOMClient;\n}\nexport {};\n`
+      },
+      '/__raw.js': { code: rawModule },
+      '/App.jsx': {
+        code: `import React, { useEffect } from 'react';\nimport './prelude.js';\nimport raw from './__raw.js';\n\nexport default function App(){\n  useEffect(() => {\n    try {\n      const ensure = (id) => { let el = document.getElementById(id); if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); } return el; };\n      ensure('root'); ensure('app');\n      if (!window.ReactDOM) { console.warn('ReactDOM global missing; ensure prelude loaded.'); }\n      const fn = new Function(raw);\n      fn();\n    } catch(e){ console.error('Runtime error while executing raw code:', e); }\n  }, []);\n  return React.createElement('div', { className: 'p-4 text-sm text-slate-700' }, 'Running generated script...');\n}\n`,
+      },
+      '/UserCode.jsx': { code: userCode },
+    };
+  }, [code]);
 
   return (
     <div className="h-screen w-screen grid grid-rows-[auto,1fr,auto] bg-slate-50 text-slate-900">
@@ -155,6 +182,11 @@ function App() {
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
+        <label className="text-xs flex items-center gap-1 px-2"><input type="checkbox" checked={useSandpack} onChange={(e) => setUseSandpack(e.target.checked)} /> Use Sandpack</label>
+        <select className="text-xs border rounded px-2 py-1" value={styleMode} onChange={(e) => setStyleMode(e.target.value)}>
+          <option value="tailwind">Tailwind</option>
+          <option value="css">Plain CSS</option>
+        </select>
         <button
           className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded disabled:opacity-60"
           onClick={handleGenerate}
@@ -172,18 +204,38 @@ function App() {
       </div>
 
       <div className="grid grid-cols-2 min-h-0">
-        <div className="flex flex-col min-h-0 border-r">
-          <div className="px-3 py-2 text-xs font-semibold bg-slate-100 border-b">Editor (JS)</div>
-          <textarea
-            className="flex-1 p-3 font-mono text-sm outline-none"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col min-h-0">
-          <div className="px-3 py-2 text-xs font-semibold bg-slate-100 border-b">Live Preview</div>
-          <iframe ref={iframeRef} title="preview" className="flex-1 bg-white"></iframe>
-        </div>
+        {useSandpack ? (
+          <div className="col-span-2 flex flex-col min-h-0">
+            <SandpackProvider template="react" theme={githubLight} files={sandpackFiles} options={{ activeFile: '/UserCode.jsx' }}>
+              <SandpackLayout style={{ height: '100%' }}>
+                <div className="flex-1 min-h-0">
+                  <SandpackCodeEditor showTabs={true} showLineNumbers={true} wrapContent={true} style={{ height: '50vh' }} />
+                </div>
+                <div className="flex-1 min-h-0">
+                  <SandpackPreview style={{ height: '40vh' }} />
+                </div>
+              </SandpackLayout>
+              <div className="border-t">
+                <SandpackConsole maxMessageCount={200} />
+              </div>
+            </SandpackProvider>
+          </div>
+        ) : (
+          <>
+              <div className="flex flex-col min-h-0 border-r">
+                <div className="px-3 py-2 text-xs font-semibold bg-slate-100 border-b">Editor (JS)</div>
+                <textarea
+                  className="flex-1 p-3 font-mono text-sm outline-none"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col min-h-0">
+                <div className="px-3 py-2 text-xs font-semibold bg-slate-100 border-b">Live Preview</div>
+                <iframe ref={iframeRef} title="preview" className="flex-1 bg-white"></iframe>
+              </div>
+          </>
+        )}
       </div>
 
       <div className="h-40 border-t bg-white overflow-auto">
@@ -191,19 +243,23 @@ function App() {
           <span>Console Output</span>
           <button className="text-xs underline" onClick={clearLogs}>Clear</button>
         </div>
-        <div className="p-3 space-y-1 text-xs font-mono">
-          {errorText && (
-            <div className="text-red-600">Error: {errorText}</div>
-          )}
-          {logs.map((l, i) => (
-            <div key={i} className={l.level === 'error' ? 'text-red-600' : l.level === 'warn' ? 'text-amber-600' : 'text-slate-800'}>
-              [{l.level}] {l.args.join(' ')}
-            </div>
-          ))}
-          {!logs.length && !errorText && (
-            <div className="text-slate-500">No console output yet.</div>
-          )}
-        </div>
+        {!useSandpack ? (
+          <div className="p-3 space-y-1 text-xs font-mono">
+            {errorText && (
+              <div className="text-red-600">Error: {errorText}</div>
+            )}
+            {logs.map((l, i) => (
+              <div key={i} className={l.level === 'error' ? 'text-red-600' : l.level === 'warn' ? 'text-amber-600' : 'text-slate-800'}>
+                [{l.level}] {l.args.join(' ')}
+              </div>
+            ))}
+            {!logs.length && !errorText && (
+              <div className="text-slate-500">No console output yet.</div>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-slate-600 p-2">Using Sandpack console above.</div>
+        )}
       </div>
     </div>
   );
