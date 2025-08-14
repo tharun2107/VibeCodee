@@ -31,7 +31,7 @@ function sanitizeToCode(text) {
     blocks.push({ lang, body });
   }
   if (blocks.length > 0) {
-    const preferredOrder = ['javascript', 'js', 'jsx', 'tsx', 'react'];
+    const preferredOrder = ['javascript', 'js', 'jsx', 'html'];
     for (const pref of preferredOrder) {
       const found = blocks.find((b) => b.lang.includes(pref));
       if (found) return found.body.trim();
@@ -47,64 +47,39 @@ function sanitizeToCode(text) {
   }
   return str.trim();
 }
-
-function buildGenerationInstruction(userPrompt, styleMode) {
-  const styleBlock = styleMode === 'css'
-    ? [
-      'STYLING MODE: Plain CSS. Use inline styles or CSS-in-JS. Do NOT use external stylesheets.',
-      'Apply styles directly to elements using the style prop or create styled components.',
-    ].join('\n')
-    : [
-      'STYLING MODE: Tailwind CSS. Use Tailwind utility classes for styling.',
-      'Use modern Tailwind classes for beautiful, responsive designs.',
-    ].join('\n');
-
+function buildGenerationInstruction(userPrompt) {
   return [
-    'You are a React code generator that creates working React functional components.',
+    'You are an expert React developer using Tailwind CSS.',
+    'Generate complete, production-ready code that runs directly in the browser.',
+    'STRICT RULES:',
+    '- Generate the ENTIRE component in a SINGLE response',
+    '- DO NOT use import statements - React is already global',
+    '- DO NOT use export statements - assign to window instead',
+    '- Use functional components with React hooks',
+    '- Assign main component to: window.MainComponent = MyComponent',
+    '- Use Tailwind utility classes for all styling',
+    '- Include ALL necessary logic in the component',
+    '- Add detailed comments explaining complex logic',
+    '- Ensure the UI is responsive and mobile-friendly',
     '',
-    'CRITICAL REQUIREMENTS:',
-    '- Generate ONLY a single React functional component',
-    '- Use proper ES6 import syntax: import React, { useState, useEffect } from "react"',
-    '- Return JSX syntax, NOT React.createElement',
-    '- Component must be exported as default export',
-    '- Ensure all React hooks are properly imported',
-    '- Make the component self-contained and functional',
-    '',
-    'CODE STRUCTURE:',
-    'import React, { useState, useEffect } from "react";',
-    '',
-    'function ComponentName() {',
-    '  // Component logic here',
-    '  const [state, setState] = useState(initialValue);',
-    '  ',
-    '  return (',
-    '    <div className="tailwind-classes">',
-    '      {/* Component JSX */}',
-    '    </div>',
-    '  );',
+    'COMPONENT STRUCTURE EXAMPLE:',
+    'function MyComponent() {',
+    '  // State and hooks',
+    '  // Event handlers',
+    '  // JSX with Tailwind classes',
     '}',
+    'window.MainComponent = MyComponent;',
     '',
-    'export default ComponentName;',
-    '',
-    styleBlock,
-    '',
-    'IMPORTANT NOTES:',
-    '- Always use proper JSX syntax',
-    '- Ensure proper React hooks import',
-    '- Make the UI beautiful, interactive and functional',
-    '- Handle all user interactions and state changes properly',
-    '- Use semantic HTML elements and proper accessibility',
-    '- Component should be production-ready',
-    '',
-    'User Request:',
+    'TASK:',
     userPrompt,
   ].join('\n');
 }
 
-async function generateCode(prompt, modelOverride, options = {}) {
+async function generateCode(prompt, modelOverride) {
   if (!GEMINI_API_KEY) throw new Error('Missing GEMINI_API_KEY');
   const url = buildGenerateUrl(modelOverride);
-  const finalPrompt = buildGenerationInstruction(prompt, options.styleMode || 'tailwind');
+  const finalPrompt = buildGenerationInstruction(prompt);
+  
   const response = await axios.post(
     url,
     {
@@ -114,42 +89,41 @@ async function generateCode(prompt, modelOverride, options = {}) {
           parts: [{ text: finalPrompt }],
         },
       ],
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.95,
+        maxOutputTokens: 8192, // Increased token limit
+      }
     },
     {
       params: { key: GEMINI_API_KEY },
       headers: { 'Content-Type': 'application/json' },
-      validateStatus: (status) => status >= 200 && status < 300,
     }
   );
+  
   const raw = extractTextFromCandidates(response.data);
   return sanitizeToCode(raw);
 }
-
-async function fixCode(code, error, modelOverride, options = {}) {
+// services/gemini.js
+async function fixCode(code, error, modelOverride) {
   const repairPrompt = [
-    'You are fixing a React component that has errors. Fix the code to work properly.',
-    '',
-    'REQUIREMENTS:',
-    '- Fix the specific error mentioned below',
-    '- Use proper ES6 import syntax: import React, { useState, useEffect } from "react"',
-    '- Return JSX syntax, NOT React.createElement',
-    '- Ensure all React hooks are properly imported',
-    '- Component must be exported as default export',
-    '- Return ONLY the corrected JavaScript code with proper formatting',
-    '',
-    options.styleMode === 'css'
-      ? 'STYLING: Use inline styles or CSS-in-JS.'
-      : 'STYLING: Use Tailwind CSS utility classes.',
-    '',
-    'ORIGINAL CODE:',
-    code,
-    '',
-    'ERROR TO FIX:',
+    'Fix the following React code that uses Tailwind CSS.',
+    'The code has the following error:',
     error,
     '',
-    'Return the complete corrected code with proper imports and exports:'
-  ].filter(Boolean).join('\n');
-  return generateCode(repairPrompt, modelOverride, { styleMode: options.styleMode || 'tailwind' });
+    'IMPORTANT RULES:',
+    '- Use ES modules syntax ONLY (NO require(), NO module.exports)',
+    '- Use React and ReactDOM from global window object',
+    '- Export the main component as: "window.MainComponent = MyComponent"',
+    '- Do NOT use any Node.js-specific features',
+    '',
+    'Code to fix:',
+    code,
+    '',
+    'Return ONLY the fixed JavaScript code:',
+  ].join('\n');
+  
+  return generateCode(repairPrompt, modelOverride);
 }
 
 module.exports = { generateCode, fixCode };

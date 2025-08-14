@@ -1,227 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
-import { SandpackProvider, SandpackLayout, SandpackCodeEditor, SandpackPreview, SandpackConsole } from '@codesandbox/sandpack-react';
-import { nightOwl } from '@codesandbox/sandpack-themes';
+import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2 } from 'react-icons/fi';
+import Editor from '@monaco-editor/react';
 
-function extractCodeBlock(text) {
-  if (!text) return '';
-  const str = String(text);
-  const fenceRegex = /```\s*([a-zA-Z0-9+-]*)\n([\s\S]*?)```/g;
-  let match;
-  const blocks = [];
-  while ((match = fenceRegex.exec(str)) !== null) {
-    const lang = (match[1] || '').toLowerCase();
-    const body = match[2] || '';
-    blocks.push({ lang, body });
-  }
-  if (blocks.length > 0) {
-    const preferredOrder = ['javascript', 'js', 'jsx', 'html'];
-    for (const pref of preferredOrder) {
-      const found = blocks.find((b) => b.lang.includes(pref));
-      if (found) return found.body.trim();
-    }
-    blocks.sort((a, b) => b.body.length - a.body.length);
-    return blocks[0].body.trim();
-  }
-  const lines = str.split(/\r?\n/);
-  const idx = lines.findIndex((ln) => /^(const |let |var |function |import |export |document\.|window\.|\()/.test(ln.trim()));
-  if (idx >= 0) return lines.slice(idx).join('\n').trim();
-  return str.trim();
-}
-
-function useSandbox(htmlSource) {
-  const iframeRef = useRef(null);
-  const [logs, setLogs] = useState([]);
-
-  const iframeHtml = useMemo(() => {
-    const libs = `
-      <!-- Tailwind via CDN -->
-      <script src="https://cdn.tailwindcss.com"></script>
-      <!-- React 18 UMD -->
-      <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-      <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-      <!-- Babel standalone for JSX support -->
-      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    `;
-
-    const bootstrap = `
-      <script>
-        (function(){
-          function send(level, args){
-            try {
-              parent.postMessage({ 
-                type: 'console', 
-                level, 
-                args: Array.from(args).map(a => {
-                  try { 
-                    return typeof a === 'object' && a !== null ? JSON.stringify(a) : String(a); 
-                  } catch(e){ 
-                    return String(a); 
-                  }
-                }),
-                timestamp: Date.now()
-              }, '*');
-            } catch(_){}
-          }
-          
-          ['log','warn','error','info'].forEach(k=>{
-            const orig = console[k];
-            console[k] = function(){ 
-              send(k, arguments); 
-              try{ orig && orig.apply(console, arguments); }catch(_){} 
-            };
-          });
-          
-          window.addEventListener('error', function(e){
-            send('error', ['Runtime Error: ' + e.message + ' @ ' + e.filename + ':' + e.lineno]);
-          });
-          
-          window.addEventListener('unhandledrejection', function(e){
-            const r = e && e.reason;
-            send('error', ['Unhandled Promise Rejection: ' + (r && (r.stack || r.message) || r)]);
-          });
-
-          function executeUserCode(code){
-            try {
-              console.log('Executing user code...');
-              
-              // Clear previous content
-              const rootEl = document.getElementById('root');
-              const appEl = document.getElementById('app');
-              if (rootEl) rootEl.innerHTML = '';
-              if (appEl) appEl.innerHTML = '';
-              
-              // Ensure React is available
-              if (!window.React || !window.ReactDOM) {
-                console.error('React or ReactDOM not available');
-                return;
-              }
-              
-              let finalCode = String(code || '');
-              
-              try {
-                // Transform JSX using Babel
-                if (window.Babel) {
-                  const result = window.Babel.transform(finalCode, { 
-                    presets: ['react'],
-                    plugins: ['transform-react-jsx']
-                  });
-                  finalCode = result.code || finalCode;
-                  console.log('Code transpiled with Babel');
-                }
-              } catch (babelErr) {
-                console.warn('Babel transform failed:', babelErr.message);
-              }
-              
-              // Execute the code in a safe context
-              try {
-                // Create a new script element to execute the code
-                const script = document.createElement('script');
-                script.textContent = finalCode;
-                document.head.appendChild(script);
-                console.log('Code executed successfully');
-              } catch (execError) {
-                console.error('Code execution failed:', execError.message);
-                // Show error in DOM
-                const target = document.getElementById('root') || document.getElementById('app');
-                if (target) {
-                  target.innerHTML = '<div style="color: red; padding: 20px; font-family: monospace; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; margin: 20px;">' +
-                    '<h3 style="margin: 0 0 10px 0; color: #dc2626;">Execution Error</h3>' +
-                    '<pre style="margin: 0; white-space: pre-wrap;">' + execError.message + '</pre>' +
-                  '</div>';
-                }
-              }
-              
-            } catch (err) {
-              console.error('Code injection error:', err.message);
-              const target = document.getElementById('root') || document.getElementById('app');
-              if (target) {
-                target.innerHTML = '<div style="color: red; padding: 20px; font-family: monospace; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; margin: 20px;">' +
-                  '<h3 style="margin: 0 0 10px 0; color: #dc2626;">Execution Error</h3>' +
-                  '<pre style="margin: 0; white-space: pre-wrap;">' + err.message + '</pre>' +
-                '</div>';
-              }
-            }
-          }
-
-          window.addEventListener('message', function(e){
-            try {
-              if (e && e.data && e.data.type === 'execute') {
-                executeUserCode(e.data.code || '');
-              }
-            } catch(err){
-              console.error('Message handling error:', err.message);
-            }
-          });
-        })();
-      </script>
-    `;
-    
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset='utf-8'>
-  <meta name='viewport' content='width=device-width, initial-scale=1'>
-  <style>
-    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
-    #app, #root { min-height: 100%; }
-    * { box-sizing: border-box; }
-  </style>
-  ${libs}
-</head>
-<body>
-  <div id="root"></div>
-  <div id="app"></div>
-  ${bootstrap}
-</body>
-</html>`;
-  }, []);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e?.data?.type === 'console') {
-        setLogs((prev) => [...prev.slice(-99), { 
-          level: e.data.level, 
-          args: e.data.args, 
-          timestamp: e.data.timestamp || Date.now() 
-        }]);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  useEffect(() => {
-    setLogs([]);
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(iframeHtml);
-      doc.close();
-      
-      const cw = iframe.contentWindow;
-      if (cw) {
-        setTimeout(() => {
-          cw.postMessage({ type: 'execute', code: htmlSource || '' }, '*');
-        }, 100);
-      }
-    }
-  }, [iframeHtml, htmlSource]);
-
-  return { iframeRef, logs, clearLogs: () => setLogs([]) };
-}
-
-function App() {
-  const [prompt, setPrompt] = useState('Create a beautiful React todo app with drag & drop functionality using Tailwind CSS');
-  const [code, setCode] = useState(`import React, { useState } from 'react';
-
-function TodoApp() {
-  const [todos, setTodos] = useState([]);
-  const [newTodo, setNewTodo] = useState('');
-
+// File structure helper
+const createFileStructure = () => [
+  {
+    id: 'root',
+    name: 'project',
+    type: 'folder',
+    children: [
+      {
+        id: 'src',
+        name: 'src',
+        type: 'folder',
+        children: [
+          {
+            id: 'App.jsx',
+            name: 'App.jsx',
+            type: 'file',
+            language: 'javascript',
+            content: `function TodoApp() {
+  const [todos, setTodos] = React.useState([]);
+  const [newTodo, setNewTodo] = React.useState('');
+  
   const addTodo = () => {
     if (newTodo.trim()) {
       setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }]);
@@ -270,7 +72,7 @@ function TodoApp() {
                 onChange={() => toggleTodo(todo.id)}
                 className="mr-3 h-4 w-4 text-blue-600 rounded"
               />
-              <span className={\`flex-1 \${todo.completed ? 'line-through text-gray-500' : 'text-gray-800'}\`}>
+              <span className={'flex-1 ' + (todo.completed ? 'line-through text-gray-500' : 'text-gray-800')}>
                 {todo.text}
               </span>
               <button
@@ -290,30 +92,272 @@ function TodoApp() {
   );
 }
 
-// Render the component
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(TodoApp));
+window.MainComponent = TodoApp;`
+          },
+          {
+            id: 'index.js',
+            name: 'index.js',
+            type: 'file',
+            language: 'javascript',
+            content: `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
 
-export default TodoApp;`);
-  
-  const [jwt, setJwt] = useState('');
-  const [model, setModel] = useState('');
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);`
+          }
+        ]
+      },
+      {
+        id: 'public',
+        name: 'public',
+        type: 'folder',
+        children: [
+          {
+            id: 'index.html',
+            name: 'index.html',
+            type: 'file',
+            language: 'html',
+            content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeCode App</title>
+  <script>
+  // Suppress Tailwind CDN warning
+  window.tailwindConfig = { darkMode: false };
+</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>`
+          }
+        ]
+      }
+    ]
+  }
+];
+
+// Find file by ID
+const findFileById = (tree, id) => {
+  for (const node of tree) {
+    if (node.id === id) return node;
+    if (node.children) {
+      const found = findFileById(node.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+// Extract code from Gemini response
+function extractCodeBlock(text) {
+  if (!text) return '';
+  const str = String(text);
+  const fenceRegex = /```\s*([a-zA-Z0-9+-]*)\n([\s\S]*?)```/g;
+  let match;
+  const blocks = [];
+  while ((match = fenceRegex.exec(str)) !== null) {
+    const lang = (match[1] || '').toLowerCase();
+    const body = (match[2] || '').trim();
+    blocks.push({ lang, body });
+  }
+  if (blocks.length > 0) {
+    const preferredOrder = ['javascript', 'js', 'jsx', 'html'];
+    for (const pref of preferredOrder) {
+      const found = blocks.find((b) => b.lang.includes(pref));
+      if (found) return found.body;
+    }
+    blocks.sort((a, b) => b.body.length - a.body.length);
+    return blocks[0].body;
+  }
+  const lines = str.split(/\r?\n/);
+  const idx = lines.findIndex((ln) => /^(const |let |var |function |import |export |document\.|window\.|\()/.test(ln.trim()));
+  if (idx >= 0) return lines.slice(idx).join('\n').trim();
+  return str.trim();
+}
+
+function App() {
+  const [prompt, setPrompt] = useState('Create a beautiful React todo app with drag & drop functionality using Tailwind CSS');
+  const [fileTree, setFileTree] = useState(createFileStructure());
+  const [model, setModel] = useState('gemini-2.5-flash');
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
-  const [useSandpack, setUseSandpack] = useState(true); // Default to Sandpack
-  const [styleMode, setStyleMode] = useState('tailwind');
   const [activeTab, setActiveTab] = useState('preview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [openTabs, setOpenTabs] = useState(['App.jsx']);
+  const [activeFileId, setActiveFileId] = useState('App.jsx');
+  const [editorRef, setEditorRef] = useState(null);
+  const [expandedFolders, setExpandedFolders] = useState(['root', 'src', 'public']);
+  const [previewKey, setPreviewKey] = useState(0); // To force iframe reload
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [isServerRunning, setIsServerRunning] = useState(false);
 
-  const { iframeRef, logs, clearLogs } = useSandbox(code);
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
-  const handleGenerate = useCallback(async () => {
-    if (!jwt) { 
-      alert('Please enter your JWT token first!'); 
-      return; 
+  // Check server health
+  useEffect(() => {
+    const checkServerHealth = async () => {
+      try {
+        const response = await fetch(`${apiBase}/health`);
+        if (response.ok) {
+          setIsServerRunning(true);
+        } else {
+          setIsServerRunning(false);
+        }
+      } catch (error) {
+        setIsServerRunning(false);
+      }
+    };
+
+    checkServerHealth();
+    const interval = setInterval(checkServerHealth, 10000); // Check every 10 seconds
+    return () => clearInterval(interval);
+  }, [apiBase]);
+
+  // Get current file content
+  const getCurrentFileContent = () => {
+    const file = findFileById(fileTree, activeFileId);
+    return file ? file.content : '';
+  };
+
+  // Update file content
+  const updateFileContent = (fileId, newContent) => {
+    const updateTree = (tree) => {
+      return tree.map(node => {
+        if (node.id === fileId) {
+          return { ...node, content: newContent };
+        }
+        if (node.children) {
+          return { ...node, children: updateTree(node.children) };
+        }
+        return node;
+      });
+    };
+
+    setFileTree(prev => updateTree(prev));
+    setPreviewKey(prev => prev + 1); // Force preview refresh
+  };
+
+  // Handle file selection
+  const handleFileSelect = (fileId) => {
+    setActiveFileId(fileId);
+    if (!openTabs.includes(fileId)) {
+      setOpenTabs(prev => [...prev, fileId]);
     }
-    
+  };
+
+  // Handle tab close
+  const handleTabClose = (fileId) => {
+    if (openTabs.length > 1) {
+      setOpenTabs(prev => prev.filter(tab => tab !== fileId));
+      if (activeFileId === fileId) {
+        setActiveFileId(openTabs.find(tab => tab !== fileId));
+      }
+    }
+  };
+
+  // Toggle folder expansion
+  const toggleFolder = (folderId) => {
+    setExpandedFolders(prev =>
+      prev.includes(folderId)
+        ? prev.filter(id => id !== folderId)
+        : [...prev, folderId]
+    );
+  };
+
+  // Add new file
+  const addNewFile = (parentId) => {
+    const newFile = {
+      id: `file-${Date.now()}`,
+      name: 'new-file.jsx',
+      type: 'file',
+      language: 'javascript',
+      content: '// New file content'
+    };
+
+    const addToTree = (tree) => {
+      return tree.map(node => {
+        if (node.id === parentId) {
+          return {
+            ...node,
+            children: [...(node.children || []), newFile]
+          };
+        }
+        if (node.children) {
+          return { ...node, children: addToTree(node.children) };
+        }
+        return node;
+      });
+    };
+
+    setFileTree(prev => addToTree(prev));
+    handleFileSelect(newFile.id);
+  };
+
+  // Delete file/folder
+  const deleteNode = (nodeId) => {
+    const removeFromTree = (tree) => {
+      return tree.filter(node => {
+        if (node.id === nodeId) return false;
+        if (node.children) {
+          return { ...node, children: removeFromTree(node.children) };
+        }
+        return true;
+      });
+    };
+
+    setFileTree(prev => removeFromTree(prev));
+    handleTabClose(nodeId);
+  };
+
+  // Download current file
+  const downloadCurrentFile = () => {
+    const file = findFileById(fileTree, activeFileId);
+    if (!file) return;
+
+    const blob = new Blob([file.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Handle code changes
+  const handleEditorChange = (value) => {
+    updateFileContent(activeFileId, value || '');
+  };
+
+  // Handle Monaco Editor mount
+  const handleEditorDidMount = (editor) => {
+    setEditorRef(editor);
+  };
+
+  // Get language for Monaco Editor
+  const getMonacoLanguage = (fileName) => {
+    const ext = fileName.split('.').pop().toLowerCase();
+    switch (ext) {
+      case 'js': return 'javascript';
+      case 'jsx': return 'javascript';
+      case 'ts': return 'typescript';
+      case 'tsx': return 'typescript';
+      case 'html': return 'html';
+      case 'css': return 'css';
+      case 'json': return 'json';
+      case 'md': return 'markdown';
+      default: return 'plaintext';
+    }
+  };
+
+  // Generate code with Gemini
+  const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) {
       alert('Please enter a prompt describing what you want to build!');
       return;
@@ -321,19 +365,14 @@ export default TodoApp;`);
     
     setLoading(true); 
     setErrorText(''); 
-    clearLogs();
     
     try {
       const res = await fetch(`${apiBase}/generate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt, 
-          model: model || undefined, 
-          styleMode 
+          model
         }),
       });
       
@@ -343,14 +382,10 @@ export default TodoApp;`);
       }
       
       const data = await res.json();
-      const raw = data.code || '';
-      const cleaned = extractCodeBlock(raw);
+      const cleaned = extractCodeBlock(data.code || '');
       
-      if (cleaned !== raw) {
-        console.log('Extracted code from markdown fences');
-      }
-      
-      setCode(cleaned);
+      // Update the active file with new code
+      updateFileContent(activeFileId, cleaned);
       setActiveTab('preview');
       
     } catch (e) {
@@ -360,15 +395,12 @@ export default TodoApp;`);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, clearLogs, jwt, model, prompt, styleMode]);
+  }, [apiBase, model, prompt, activeFileId]);
 
+  // Fix code with Gemini
   const handleFix = useCallback(async () => {
-    if (!jwt) { 
-      alert('Please enter your JWT token first!'); 
-      return; 
-    }
-    
-    if (!code.trim()) {
+    const currentContent = getCurrentFileContent();
+    if (!currentContent.trim()) {
       alert('No code to fix! Generate some code first.');
       return;
     }
@@ -377,22 +409,12 @@ export default TodoApp;`);
     setErrorText('');
     
     try {
-      const lastError = [...logs].reverse().find(l => l.level === 'error');
-      const errMsg = lastError ? 
-        lastError.args.join(' ') : 
-        'No explicit error found. Please improve code quality and fix any potential issues.';
-      
       const res = await fetch(`${apiBase}/fix`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          code, 
-          error: errMsg, 
-          model: model || undefined, 
-          styleMode 
+          code: currentContent,
+          model
         }),
       });
       
@@ -402,14 +424,9 @@ export default TodoApp;`);
       }
       
       const data = await res.json();
-      const raw = data.code || '';
-      const cleaned = extractCodeBlock(raw);
+      const cleaned = extractCodeBlock(data.code || '');
       
-      if (cleaned !== raw) {
-        console.log('Extracted fixed code from markdown fences');
-      }
-      
-      setCode(cleaned);
+      updateFileContent(activeFileId, cleaned);
       setActiveTab('preview');
       
     } catch (e) {
@@ -419,111 +436,174 @@ export default TodoApp;`);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, code, jwt, model, logs, styleMode]);
+  }, [apiBase, model, activeFileId, getCurrentFileContent]);
 
-  // Transform code for Sandpack
-  const sandpackFiles = useMemo(() => {
-    let transformedCode = code;
-    
-    // Ensure proper imports
-    if (!transformedCode.includes('import React')) {
-      transformedCode = `import React, { useState, useEffect } from 'react';\n\n${transformedCode}`;
-    }
-    
-    // Remove any rendering code at the end for Sandpack
-    transformedCode = transformedCode.replace(/\/\/ Render the component[\s\S]*$/, '');
-    transformedCode = transformedCode.replace(/const root = ReactDOM\.createRoot[\s\S]*$/, '');
-    transformedCode = transformedCode.replace(/ReactDOM\.render[\s\S]*$/, '');
-    
-    // Ensure proper export
-    if (!transformedCode.includes('export default')) {
-      // Find the main component name
-      const componentMatch = transformedCode.match(/function\s+(\w+)/);
-      if (componentMatch) {
-        const componentName = componentMatch[1];
-        if (!transformedCode.includes(`export default ${componentName}`)) {
-          transformedCode += `\n\nexport default ${componentName};`;
-        }
-      } else {
-        // If no function component found, wrap the code
-        transformedCode = `import React, { useState, useEffect } from 'react';
+  // Render file tree recursively
+  const renderFileTree = (nodes) => {
+    return nodes.map(node => {
+      if (node.type === 'folder') {
+        const isExpanded = expandedFolders.includes(node.id);
+        return (
+          <div key={node.id} className="pl-3">
+            <div
+              className="flex items-center gap-2 py-1 cursor-pointer hover:bg-purple-500/10 rounded"
+              onClick={() => toggleFolder(node.id)}
+            >
+              <FiChevronRight
+                className={`w-4 h-4 transition-transform ${isExpanded ? 'transform rotate-90' : ''}`}
+              />
+              <FiFolder className="w-4 h-4 text-yellow-400" />
+              <span className="text-sm truncate">{node.name}</span>
+            </div>
 
-export default function App() {
-  return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">Generated App</h1>
-      <pre className="bg-gray-100 p-4 rounded text-xs overflow-auto">
-        {${JSON.stringify(code)}}
-      </pre>
-    </div>
-  );
-}`;
+            {isExpanded && node.children && (
+              <div className="pl-4">
+                {renderFileTree(node.children)}
+                <button
+                  className="flex items-center gap-1 text-xs text-purple-300 mt-1 ml-1 hover:text-purple-100"
+                  onClick={() => addNewFile(node.id)}
+                >
+                  <FiPlus className="w-3 h-3" /> New File
+                </button>
+              </div>
+            )}
+          </div>
+        );
       }
+
+      return (
+        <div
+          key={node.id}
+          className={`flex items-center justify-between gap-2 pl-6 py-1 rounded cursor-pointer transition-colors ${activeFileId === node.id
+            ? 'bg-purple-500/30 text-white'
+            : 'text-purple-300 hover:bg-purple-500/20 hover:text-white'
+            }`}
+          onClick={() => handleFileSelect(node.id)}
+        >
+          <div className="flex items-center gap-2 truncate">
+            <FiFile className="w-4 h-4" />
+            <span className="text-sm truncate">{node.name}</span>
+          </div>
+          <button
+            className="p-1 hover:bg-purple-500/30 rounded"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteNode(node.id);
+            }}
+          >
+            <FiTrash2 className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    });
+  };
+  const previewSource = useMemo(() => {
+    const file = findFileById(fileTree, activeFileId);
+    if (!file) return '';
+
+    if (file.name.endsWith('.html')) {
+      return file.content;
     }
     
-    return {
-      '/App.js': {
-        code: transformedCode
-      },
-      '/index.js': {
-        code: `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const rootElement = document.getElementById('root');
-const root = ReactDOM.createRoot(rootElement);
-
-root.render(<App />);`
-      },
-      '/public/index.html': {
-        code: `<!DOCTYPE html>
-<html lang="en">
+    // Create a simple HTML template with the code
+    return `<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VibeCode Preview</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background-color: #f3f4f6;
+    }
+    #root {
+      min-height: 100vh;
+      padding: 20px;
+    }
+  </style>
 </head>
 <body>
-    <div id="root"></div>
-</body>
-</html>`
-      }
-    };
-  }, [code]);
+  <div id="root"></div>
 
+  <script type="text/babel">
+    try {
+      // User code - Babel will transpile JSX automatically
+      ${file.content}
+      
+      // Mount the component if MainComponent exists
+      if (window.MainComponent) {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(window.MainComponent));
+      } else {
+        throw new Error('No MainComponent found. Make sure to assign your component to window.MainComponent');
+      }
+    } catch (error) {
+      console.error('Preview Error:', error);
+      document.getElementById('root').innerHTML = \`
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+          <h2 class="text-lg font-bold mb-2">Preview Error</h2>
+          <pre class="text-sm overflow-auto mb-4">\${error.toString()}</pre>
+          <button onclick="location.reload()" class="mt-3 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+            Retry Preview
+          </button>
+        </div>
+      \`;
+    }
+  </script>
+</body>
+</html>`;
+  }, [fileTree, activeFileId, previewKey]);
   return (
     <div className="h-screen w-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
-      {/* Left Sidebar - Prompt & Controls */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300 bg-black/30 backdrop-blur-sm border-r border-purple-500/20 flex flex-col`}>
-        {/* Sidebar Header */}
+      {/* Left Sidebar - File Explorer & Controls */}
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} transition-all duration-300 bg-black/30 backdrop-blur-sm border-r border-purple-500/20 flex flex-col`}>
         <div className="p-4 border-b border-purple-500/20 flex items-center gap-3">
           <button 
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="p-2 hover:bg-purple-500/20 rounded-lg transition-colors"
           >
-            <div className="w-5 h-5 flex flex-col justify-center space-y-1">
-              <div className="w-full h-0.5 bg-purple-300"></div>
-              <div className="w-full h-0.5 bg-purple-300"></div>
-              <div className="w-full h-0.5 bg-purple-300"></div>
-            </div>
+            {sidebarCollapsed ? <FiChevronRight className="w-5 h-5" /> : <FiChevronLeft className="w-5 h-5" />}
           </button>
           {!sidebarCollapsed && (
-            <>
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">VC</span>
-              </div>
+            <div className="flex items-center gap-3">
               <div className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                 VibeCode
               </div>
-            </>
+              <div className={`flex items-center gap-1 text-xs ${isServerRunning ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`w-2 h-2 rounded-full ${isServerRunning ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                {isServerRunning ? 'Server Online' : 'Server Offline'}
+              </div>
+            </div>
           )}
         </div>
 
         {!sidebarCollapsed && (
           <>
+            {/* File Explorer */}
+            <div className="p-4 flex-1 overflow-auto">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-purple-300">
+                  Explorer
+                </label>
+                <button
+                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                  onClick={() => addNewFile('src')}
+                >
+                  <FiPlus className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-1">
+                {renderFileTree(fileTree)}
+              </div>
+            </div>
+
             {/* Prompt Section */}
-            <div className="p-4 border-b border-purple-500/20">
+            <div className="p-4 border-t border-purple-500/20">
               <label className="block text-sm font-semibold text-purple-300 mb-2">
                 Describe your app
               </label>
@@ -535,67 +615,25 @@ root.render(<App />);`
               />
             </div>
 
-            {/* API Configuration */}
-            <div className="p-4 space-y-3 border-b border-purple-500/20">
-              <div>
-                <label className="block text-xs font-semibold text-purple-300 mb-1">
-                  JWT Token *
-                </label>
-                <input
-                  type="password"
-                  className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  placeholder="Enter your JWT token"
-                  value={jwt}
-                  onChange={(e) => setJwt(e.target.value)}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-purple-300 mb-1">
-                    Model
-                  </label>
-                  <input
-                    className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="Optional"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-semibold text-purple-300 mb-1">
-                    Style
-                  </label>
-                  <select
-                    className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={styleMode}
-                    onChange={(e) => setStyleMode(e.target.value)}
-                  >
-                    <option value="tailwind">Tailwind</option>
-                    <option value="css">Plain CSS</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
-                  id="sandpack" 
-                  checked={useSandpack} 
-                  onChange={(e) => setUseSandpack(e.target.checked)} 
-                  className="rounded"
-                />
-                <label htmlFor="sandpack" className="text-xs text-purple-300">
-                  Use Sandpack (CodeSandbox)
-                </label>
-              </div>
+            {/* Model Selection */}
+            <div className="p-4 border-t border-purple-500/20">
+              <label className="block text-xs font-semibold text-purple-300 mb-1">
+                AI Model
+              </label>
+              <select
+                className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              </select>
             </div>
 
             {/* Action Buttons */}
             <div className="p-4 space-y-3">
               <button
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
                 onClick={handleGenerate}
                 disabled={loading}
               >
@@ -610,7 +648,7 @@ root.render(<App />);`
               </button>
 
               <button
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
                 onClick={handleFix}
                 disabled={loading}
               >
@@ -639,184 +677,187 @@ root.render(<App />);`
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {useSandpack ? (
-          /* Sandpack Layout */
-          <div className="flex-1 min-h-0">
-            <SandpackProvider 
-              template="react" 
-              theme={nightOwl} 
-              files={sandpackFiles} 
-              options={{ 
-                activeFile: '/App.js',
-                visibleFiles: ['/App.js'],
-                externalResources: [
-                  "https://cdn.tailwindcss.com"
-                ]
-              }}
-              customSetup={{
-                dependencies: {
-                  "react": "^18.0.0",
-                  "react-dom": "^18.0.0"
-                }
-              }}
-            >
-              <SandpackLayout style={{ height: '100%' }}>
-                <div className="flex-1 min-h-0 border-r border-purple-500/20">
-                  <SandpackCodeEditor
-                    showTabs={true}
-                    showLineNumbers={true}
-                    wrapContent={true}
-                    style={{ height: '100%' }}
-                    showInlineErrors={true}
-                    showNavigator={true}
-                  />
-                </div>
-                <div className="flex-1 min-h-0 flex flex-col">
-                  <div className="flex-1 min-h-0 bg-white">
-                    <SandpackPreview
-                      style={{
-                        height: '100%',
-                        border: 'none',
-                        borderRadius: '0'
-                      }}
-                      showNavigator={true}
-                      showRefreshButton={true}
-                      showOpenInCodeSandbox={true}
-                    />
-                  </div>
-                  <div className="h-48 border-t border-purple-500/20 bg-black/10">
-                    <SandpackConsole
-                      maxMessageCount={100}
-                      showSyntaxError={true}
-                      showSetupProgress={false}
-                    />
-                  </div>
-                </div>
-              </SandpackLayout>
-            </SandpackProvider>
-          </div>
-        ) : (
-          /* Custom Layout */
-          <>
-            {/* Code Editor */}
-            <div className="flex-1 min-h-0 flex">
-              <div className="flex-1 min-h-0 bg-black/20 backdrop-blur-sm border-r border-purple-500/20 flex flex-col">
-                <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="ml-2 text-sm font-semibold">Code Editor</span>
-                </div>
-                <textarea
-                  className="flex-1 p-4 font-mono text-sm bg-transparent text-white outline-none resize-none"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Your generated code will appear here..."
-                  spellCheck={false}
-                />
+        {/* Editor with Tabs */}
+        <div className="flex-1 min-h-0 flex">
+          {/* Code Editor */}
+          <div className="flex-1 min-h-0 bg-black/20 backdrop-blur-sm border-r border-purple-500/20 flex flex-col">
+            {/* Tab Bar */}
+            <div className="flex items-center bg-black/40 border-b border-purple-500/20">
+              <div className="flex items-center gap-2 px-4 py-2">
+                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
               </div>
 
-              {/* Right Panel - Preview & Console */}
-              <div className="flex-1 min-h-0 flex flex-col bg-black/20 backdrop-blur-sm">
-                {/* Tab Headers */}
-                <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        activeTab === 'preview' 
-                          ? 'bg-purple-500 text-white' 
-                          : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
-                      }`}
-                      onClick={() => setActiveTab('preview')}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors relative ${
-                        activeTab === 'console' 
-                          ? 'bg-purple-500 text-white' 
-                          : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
-                      }`}
-                      onClick={() => setActiveTab('console')}
-                    >
-                      Console
-                      {logs.length > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                          {logs.length > 9 ? '9+' : logs.length}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                </div>
+              {/* File Tabs */}
+              <div className="flex-1 flex">
+                {openTabs.map(tabId => {
+                  const tab = findFileById(fileTree, tabId);
+                  if (!tab) return null;
 
-                {/* Content Area */}
-                <div className="flex-1 min-h-0">
-                  {activeTab === 'preview' ? (
-                    <iframe 
-                      ref={iframeRef} 
-                      title="preview" 
-                      className="w-full h-full bg-white" 
-                    />
-                  ) : (
-                    <div className="h-full overflow-auto">
-                      <div className="p-3 border-b border-purple-500/20 flex items-center justify-between">
-                        <span className="text-sm font-semibold flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                          Console Output ({logs.length})
-                        </span>
-                        <button 
-                          className="text-xs text-purple-300 hover:text-purple-100 underline transition-colors" 
-                          onClick={clearLogs}
+                  return (
+                    <div
+                      key={tabId}
+                      className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-r border-purple-500/20 transition-colors ${activeFileId === tabId
+                        ? 'bg-purple-500/30 text-white'
+                        : 'bg-black/20 text-purple-300 hover:bg-purple-500/20 hover:text-white'
+                        }`}
+                      onClick={() => setActiveFileId(tabId)}
+                    >
+                      <FiFile className="w-3 h-3" />
+                      <span className="text-sm">{tab.name}</span>
+                      {openTabs.length > 1 && (
+                        <button
+                          className="ml-2 hover:bg-purple-500/30 rounded p-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTabClose(tabId);
+                          }}
                         >
-                          Clear
+                          <FiX className="w-3 h-3" />
                         </button>
-                      </div>
-                      <div className="p-3 space-y-2 text-xs font-mono">
-                        {logs.length === 0 ? (
-                          <div className="text-purple-400/60 text-center py-8">
-                            No console output yet. Generate some code to see logs here.
-                          </div>
-                        ) : (
-                          logs.map((log, i) => (
-                            <div 
-                              key={i} 
-                              className={`p-2 rounded-lg border ${
-                                log.level === 'error'
-                                  ? 'text-red-400 bg-red-900/20 border-red-500/30'
-                                  : log.level === 'warn'
-                                    ? 'text-yellow-400 bg-yellow-900/20 border-yellow-500/30'
-                                    : 'text-purple-300 bg-purple-900/20 border-purple-500/30'
-                              }`}
-                            >
-                              <div className="flex items-start gap-2">
-                                <span className="font-semibold uppercase text-xs opacity-70">
-                                  [{log.level}]
-                                </span>
-                                <span className="flex-1">
-                                  {log.args.join(' ')}
-                                </span>
-                                {log.timestamp && (
-                                  <span className="text-xs opacity-50">
-                                    {new Date(log.timestamp).toLocaleTimeString()}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })}
+              </div>
+
+              {/* Editor Actions */}
+              <div className="flex items-center gap-2 px-4">
+                <button
+                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                  title="Save"
+                >
+                  <FiSave className="w-4 h-4" />
+                </button>
+                <button
+                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                  title="Download"
+                  onClick={downloadCurrentFile}
+                >
+                  <FiDownload className="w-4 h-4" />
+                </button>
               </div>
             </div>
-          </>
-        )}
+
+            {/* Monaco Editor */}
+            <div className="flex-1">
+              <Editor
+                height="100%"
+                language={getMonacoLanguage(findFileById(fileTree, activeFileId)?.name || 'javascript')}
+                value={getCurrentFileContent()}
+                onChange={handleEditorChange}
+                onMount={handleEditorDidMount}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: true },
+                  fontSize: 14,
+                  wordWrap: 'on',
+                  automaticLayout: true,
+                  scrollBeyondLastLine: false,
+                  renderWhitespace: 'all',
+                  lineNumbers: 'on',
+                  folding: true,
+                  showFoldingControls: 'always',
+                  matchBrackets: 'always',
+                  autoClosingBrackets: 'always',
+                  autoIndent: 'full',
+                  tabSize: 2,
+                  insertSpaces: true,
+                  suggestOnTriggerCharacters: true,
+                  quickSuggestions: true,
+                  parameterHints: { enabled: true },
+                  hover: { enabled: true },
+                  contextmenu: true,
+                  mouseWheelZoom: true,
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  cursorSmoothCaretAnimation: 'on',
+                  bracketPairColorization: { enabled: true },
+                  guides: { bracketPairs: true, indentation: true }
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Right Panel - Preview */}
+          <div className="flex-1 min-h-0 flex flex-col bg-black/20 backdrop-blur-sm">
+            {/* Tab Headers */}
+            <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className={`px-3 py-1 text-xs rounded-lg transition-colors flex items-center gap-1 ${activeTab === 'preview'
+                    ? 'bg-purple-500 text-white'
+                    : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
+                    }`}
+                  onClick={() => setActiveTab('preview')}
+                >
+                  <FiEye className="w-3 h-3" />
+                  Preview
+                </button>
+                <button
+                  className={`px-3 py-1 text-xs rounded-lg transition-colors flex items-center gap-1 ${activeTab === 'console'
+                    ? 'bg-purple-500 text-white'
+                    : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
+                    }`}
+                  onClick={() => setActiveTab('console')}
+                >
+                  <FiTerminal className="w-3 h-3" />
+                  Console
+                  {consoleLogs.length > 0 && (
+                    <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 ml-1">
+                      {consoleLogs.length > 9 ? '9+' : consoleLogs.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Area */}
+            <div className="flex-1 min-h-0">
+              {activeTab === 'preview' && (
+                <iframe 
+                  key={previewKey}
+                  srcDoc={previewSource}
+                  title="preview"
+                  className="w-full h-full bg-white" 
+                  sandbox="allow-scripts allow-same-origin"
+                />
+              )}
+              {activeTab === 'console' && (
+                <div className="h-full bg-black/80 text-green-400 p-4 font-mono text-sm overflow-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-white font-semibold">Console Output</span>
+                    <button
+                      onClick={() => setConsoleLogs([])}
+                      className="text-xs text-gray-400 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {consoleLogs.length === 0 ? (
+                    <div className="text-gray-500 text-center py-8">
+                      No console output yet. Run your code to see logs here.
+                    </div>
+                  ) : (
+                      <div className="space-y-2">
+                        {consoleLogs.map((log, index) => (
+                          <div key={index} className={`p-2 rounded ${log.type === 'error' ? 'bg-red-900/20 text-red-400' : 'bg-gray-800/20'}`}>
+                            <span className="text-gray-500 text-xs">[{log.timestamp}]</span> {log.message}
+                          </div>
+                        ))}
+                      </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
