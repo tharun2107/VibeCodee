@@ -1,198 +1,239 @@
 # VibeCode - AI-Powered Code Editor
 
-A modern, AI-powered code editor built with React, Monaco Editor, and Google Gemini AI. Create, edit, and preview React applications with real-time AI assistance.
+A modern, AI-powered code editor built with React, Monaco Editor, and Google Gemini AI. Create, edit, and preview React applications with intelligent code generation and error fixing.
 
 ## ✨ Features
 
-- **🤖 AI Code Generation** - Generate React components using natural language prompts
-- **🔧 AI Code Fixing** - Automatically fix errors in your code
-- **📁 File Management** - Tree-based file explorer with tabs
-- **💻 Monaco Editor** - Professional code editor with syntax highlighting
-- **👁️ Live Preview** - Real-time preview of your React applications
-- **🎨 Tailwind CSS** - Built-in Tailwind CSS support for styling
-- **📱 Responsive Design** - Works on desktop and mobile devices
+### 🎯 **Core Features**
+- **Monaco Editor Integration** - Professional code editing experience
+- **Live Preview** - Real-time preview with Babel JSX transpilation
+- **File Management** - Multi-file project structure with tabs
+- **AI Code Generation** - Generate code using Google Gemini AI
+- **AI Error Fixing** - Fix code errors with intelligent suggestions
+- **Console Logging** - View console output in real-time
+- **Server Status** - Monitor backend connection status
+
+### 🚀 **Multi-File Generation (Like Lovable!)**
+- **Complete Project Structure** - Generate entire applications with multiple files
+- **Smart File Organization** - Automatic folder structure creation
+- **Component Separation** - Modular components in separate files
+- **Style Files** - CSS/SCSS files for custom styling
+- **Utility Functions** - Helper functions in dedicated files
+- **HTML Entry Points** - Complete HTML files with proper setup
+
+### 🎨 **UI/UX Features**
+- **Dark Theme** - Professional dark interface
+- **Resizable Panels** - Customizable layout
+- **File Tabs** - Multi-tab editing experience
+- **File Tree** - Hierarchical file organization
+- **Responsive Design** - Works on all screen sizes
+- **Modern Animations** - Smooth transitions and effects
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **React 18** - UI framework
+- **Monaco Editor** - Code editor (same as VS Code)
+- **Tailwind CSS** - Utility-first styling
+- **React Split** - Resizable panels
+- **React Icons** - Icon library
+- **React Hot Toast** - Notifications
+
+### Backend
+- **Node.js** - Runtime environment
+- **Express.js** - Web framework
+- **Google Gemini AI** - AI code generation
+- **MongoDB** - Database (optional)
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Node.js 18+ 
-- npm or yarn
-- Google Gemini API key
+### 1. Clone and Install
+```bash
+git clone <repository-url>
+cd VibeCode
 
-### Installation
+# Install frontend dependencies
+cd client && npm install
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd VibeCode
-   ```
+# Install backend dependencies
+cd ../server && npm install
+```
 
-2. **Install dependencies**
-   ```bash
-   # Install frontend dependencies
-   cd client
-   npm install
-   
-   # Install backend dependencies
-   cd ../server
-   npm install
-   ```
+### 2. Environment Setup
+Create `server/.env`:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+MONGODB_URI=your_mongodb_uri_here
+PORT=5000
+```
 
-3. **Set up environment variables**
-   ```bash
-   # In server directory, create .env file
-   GEMINI_API_KEY=your_gemini_api_key_here
-   MONGODB_URI=your_mongodb_connection_string
-   PORT=5000
-   ```
+### 3. Start Development Servers
+```bash
+# Backend (Terminal 1)
+cd server && npm run dev
 
-4. **Start the development servers**
-   ```bash
-   # Start backend server
-   cd server
-   npm run dev
-   
-   # Start frontend (in new terminal)
-   cd client
-   npm run dev
-   ```
+# Frontend (Terminal 2)
+cd client && npm run dev
+```
 
-5. **Open your browser**
-   - Frontend: http://localhost:5173
-   - Backend: http://localhost:5000
+### 4. Open Application
+Navigate to `http://localhost:5173` in your browser.
 
-## 🛠️ Usage
+## 📖 Usage
 
-### Creating Code with AI
-1. Enter a description of what you want to build in the prompt field
-2. Select your preferred AI model (Gemini 2.5 Flash or 1.5 Pro)
-3. Click "✨ Generate Code" to create your component
-4. The generated code will appear in the editor
+### 🎯 **Single File Generation**
+- Check "Single file mode" in the sidebar
+- Describe your component in the prompt
+- Click "Generate Code"
+- Get a single React component file
 
-### Fixing Code with AI
-1. If your code has errors, click "🔧 AI Fix"
-2. The AI will analyze and fix the issues
-3. The corrected code will replace the current content
+### 🚀 **Multi-File Project Generation**
+- Uncheck "Single file mode" (default)
+- Describe your complete application
+- Click "Generate Code"
+- Get a full project structure with multiple files
 
-### File Management
-- **Create files**: Click the "+" button in the file explorer
-- **Delete files**: Click the trash icon next to any file
-- **Switch between files**: Click on file tabs or use the file explorer
-- **Download files**: Click the download icon in the editor toolbar
+### 📝 **Example Prompts**
 
-### Preview
-- Your React components are automatically previewed in real-time
-- Switch between "Preview" and "Console" tabs to see output and logs
-- The preview uses Tailwind CSS for styling
+#### Single Component
+```
+"Create a beautiful React todo app with drag & drop functionality using Tailwind CSS"
+```
 
-## 🏗️ Project Structure
+#### Complete Project
+```
+"Create a modern SaaS landing page with clean UI built using Tailwind CSS. Make it professional with cool animations"
+```
+
+#### Multi-File Application
+```
+"Build a complete e-commerce website with product listing, shopping cart, and checkout functionality"
+```
+
+### 🔧 **File Management**
+- **Create Files** - Click "+ New File" in file tree
+- **Delete Files** - Click trash icon next to file
+- **Switch Files** - Click file in tree or use tabs
+- **Download Files** - Use download button in editor toolbar
+
+### 🎨 **Preview System**
+- **Live Preview** - See changes in real-time
+- **Console Tab** - View console.log output
+- **Error Handling** - Clear error messages with retry option
+- **Responsive Preview** - Test on different screen sizes
+
+## 🔌 API Endpoints
+
+### Code Generation
+```http
+POST /api/generate
+Content-Type: application/json
+
+{
+  "prompt": "Create a React component...",
+  "model": "gemini-2.5-flash",
+  "multiFile": true
+}
+```
+
+### Code Fixing
+```http
+POST /api/fix
+Content-Type: application/json
+
+{
+  "code": "function Component() { ... }",
+  "error": "SyntaxError: ...",
+  "model": "gemini-2.5-flash"
+}
+```
+
+### Health Check
+```http
+GET /api/health
+```
+
+## 📁 Project Structure
 
 ```
 VibeCode/
 ├── client/                 # Frontend React application
 │   ├── src/
 │   │   ├── App.jsx        # Main application component
-│   │   ├── index.css      # Global styles and Tailwind
-│   │   └── main.jsx       # React entry point
-│   ├── package.json       # Frontend dependencies
-│   └── tailwind.config.js # Tailwind CSS configuration
-├── server/                 # Backend Node.js/Express API
+│   │   ├── index.css      # Global styles
+│   │   └── main.jsx       # Application entry point
+│   ├── public/            # Static assets
+│   ├── tailwind.config.js # Tailwind configuration
+│   └── package.json       # Frontend dependencies
+├── server/                # Backend Node.js application
 │   ├── src/
-│   │   ├── index.js       # Express server setup
-│   │   ├── routes/        # API route handlers
-│   │   ├── services/      # Business logic (Gemini AI)
-│   │   └── models/        # MongoDB models
+│   │   ├── index.js       # Server entry point
+│   │   ├── routes/        # API routes
+│   │   ├── services/      # Business logic
+│   │   └── models/        # Database models
 │   └── package.json       # Backend dependencies
-└── README.md              # This file
+└── README.md             # Project documentation
 ```
-
-## 🔧 Configuration
-
-### Tailwind CSS
-The project uses Tailwind CSS v4 with custom configuration:
-- Custom color palette
-- Custom animations
-- Responsive design utilities
-
-### Monaco Editor
-Professional code editor with:
-- Syntax highlighting for multiple languages
-- Auto-completion and IntelliSense
-- Error detection and validation
-- Custom theme integration
-
-### AI Integration
-- Google Gemini API for code generation
-- Support for multiple AI models
-- Error handling and retry logic
-- Code cleaning and formatting
 
 ## 🎨 Customization
 
-### Adding New File Types
-1. Update `getMonacoLanguage()` function in `App.jsx`
-2. Add file extension mapping
-3. Update preview system if needed
-
-### Custom AI Prompts
-1. Modify `buildGenerationInstruction()` in `server/src/services/gemini.js`
-2. Add new prompt templates
-3. Update the frontend to use new prompt types
-
 ### Styling
-1. Edit `tailwind.config.js` for theme customization
-2. Modify `src/index.css` for custom styles
-3. Update component classes as needed
+- Modify `client/src/index.css` for global styles
+- Update `client/tailwind.config.js` for theme customization
+- Edit component styles in individual files
+
+### AI Models
+- Change default model in `server/src/services/gemini.js`
+- Add new models in the frontend dropdown
+- Customize generation prompts for different use cases
+
+### File Types
+- Add new file extensions in `getLanguageFromExtension()`
+- Update Monaco Editor language support
+- Extend preview system for new file types
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-**Tailwind CSS not working**
-- Ensure `@tailwindcss/postcss` is installed
-- Check PostCSS configuration
-- Verify CSS imports in `index.css`
-
-**Preview not showing**
+#### Preview Not Loading
 - Check browser console for errors
-- Verify React and Babel scripts are loading
-- Ensure code doesn't have import statements
+- Verify Babel CDN is accessible
+- Ensure React and ReactDOM are loaded
 
-**AI generation failing**
+#### AI Generation Fails
 - Verify Gemini API key is set
-- Check server is running on correct port
-- Review network tab for API errors
+- Check network connectivity
+- Review API rate limits
 
-**File operations not working**
-- Check file permissions
-- Verify file tree state management
-- Review console for JavaScript errors
+#### Tailwind CSS Not Working
+- Ensure PostCSS configuration is correct
+- Check Tailwind CSS version compatibility
+- Verify content paths in `tailwind.config.js`
 
-### Debug Mode
-Enable debug logging by setting:
-```javascript
-localStorage.setItem('debug', 'true');
-```
+### Development Tips
+- Use browser dev tools to debug preview issues
+- Check server logs for API errors
+- Monitor network requests for debugging
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
+4. Test thoroughly
 5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
 
 ## 🙏 Acknowledgments
 
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) - Code editor
-- [Tailwind CSS](https://tailwindcss.com/) - CSS framework
-- [Google Gemini](https://ai.google.dev/) - AI API
-- [React](https://reactjs.org/) - UI library
-- [Vite](https://vitejs.dev/) - Build tool
+- **Monaco Editor** - Professional code editing
+- **Google Gemini AI** - Intelligent code generation
+- **Tailwind CSS** - Utility-first styling
+- **React Community** - Amazing ecosystem
 
 ---
 
