@@ -4,7 +4,7 @@ import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, Fi
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
 
-// File structure helper
+// File structure helper - Start with empty project
 const createFileStructure = () => [
   {
     id: 'root',
@@ -21,91 +21,21 @@ const createFileStructure = () => [
             name: 'App.jsx',
             type: 'file',
             language: 'javascript',
-            content: `function TodoApp() {
-  const [todos, setTodos] = React.useState([]);
-  const [newTodo, setNewTodo] = React.useState('');
-
-  const addTodo = () => {
-    if (newTodo.trim()) {
-      setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }]);
-      setNewTodo('');
-    }
-  };
-
-  const toggleTodo = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
-  };
-
-  const deleteTodo = (id) => {
-    setTodos(todos.filter(todo => todo.id !== id));
-  };
-
+            content: `function App() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">Todo App</h1>
-        
-        <div className="flex mb-4">
-        <input
-          type="text"
-            value={newTodo}
-            onChange={(e) => setNewTodo(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addTodo()}
-          placeholder="Add a new todo..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={addTodo}
-            className="px-6 py-2 bg-blue-500 text-white rounded-r-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Add
-          </button>
-      </div>
-
-        <div className="space-y-2">
-        {todos.map(todo => (
-            <div key={todo.id} className="flex items-center p-3 bg-gray-50 rounded-lg">
-            <input
-              type="checkbox"
-              checked={todo.completed}
-              onChange={() => toggleTodo(todo.id)}
-                className="mr-3 h-4 w-4 text-blue-600 rounded"
-              />
-              <span className={'flex-1 ' + (todo.completed ? 'line-through text-gray-500' : 'text-gray-800')}>
-              {todo.text}
-            </span>
-              <button
-                onClick={() => deleteTodo(todo.id)}
-                className="ml-3 px-3 py-1 text-red-500 hover:bg-red-50 rounded"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {todos.length === 0 && (
-            <p className="text-gray-500 text-center py-8">No todos yet. Add one above!</p>
-          )}
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-gray-800 mb-4">Welcome to VibeCode</h1>
+        <p className="text-gray-600 mb-8">Start by describing what you want to build in the prompt area.</p>
+        <div className="inline-block bg-purple-100 text-purple-800 px-4 py-2 rounded-lg">
+          <p className="text-sm">✨ Your app will appear here</p>
         </div>
       </div>
     </div>
   );
 }
 
-window.MainComponent = TodoApp;`
-          },
-          {
-            id: 'index.js',
-            name: 'index.js',
-            type: 'file',
-            language: 'javascript',
-            content: `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);`
+window.MainComponent = App;`
           }
         ]
       },
@@ -126,7 +56,6 @@ root.render(<App />);`
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VibeCode App</title>
   <script>
-  // Suppress Tailwind CDN warning
   window.tailwindConfig = { darkMode: false };
 </script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -208,7 +137,7 @@ function extractCodeBlock(text) {
 }
 
 function App() {
-  const [prompt, setPrompt] = useState('Create a beautiful React todo app with drag & drop functionality using Tailwind CSS');
+  const [prompt, setPrompt] = useState('');
   const [fileTree, setFileTree] = useState(createFileStructure());
   const [model, setModel] = useState('gemini-2.5-flash');
   const [loading, setLoading] = useState(false);
@@ -222,10 +151,15 @@ function App() {
   const [previewKey, setPreviewKey] = useState(0); // To force iframe reload
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [isServerRunning, setIsServerRunning] = useState(false);
-  const [showChat, setShowChat] = useState(false);
+  const [showChat, setShowChat] = useState(true); // Show chat by default
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [previewError, setPreviewError] = useState(null);
+  const [showCodeEditor, setShowCodeEditor] = useState(false); // Hide code editor by default
+  const [showFileExplorer, setShowFileExplorer] = useState(false); // Hide file explorer by default
+  const [conversationHistory, setConversationHistory] = useState([]); // Store all conversations
+  const [editingNodeId, setEditingNodeId] = useState(null); // For renaming files
+  const [editingNodeName, setEditingNodeName] = useState(''); // For renaming files
   const iframeRef = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -384,10 +318,14 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
 
   // Rename file/folder
   const renameNode = (nodeId, newName) => {
+    if (!newName || !newName.trim()) {
+      setEditingNodeId(null);
+      return;
+    }
     const updateTree = (tree) => {
       return tree.map(node => {
         if (node.id === nodeId) {
-          return { ...node, name: newName };
+          return { ...node, name: newName.trim() };
         }
         if (node.children) {
           return { ...node, children: updateTree(node.children) };
@@ -396,11 +334,14 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       });
     };
     setFileTree(prev => updateTree(prev));
-    // Update open tabs if needed
-    if (openTabs.includes(nodeId)) {
-      // Tab name will update automatically since it reads from fileTree
-    }
-    toast.success(`Renamed to ${newName}`);
+    setEditingNodeId(null);
+    toast.success(`Renamed to ${newName.trim()}`);
+  };
+
+  // Start editing node name
+  const startEditingNode = (nodeId, currentName) => {
+    setEditingNodeId(nodeId);
+    setEditingNodeName(currentName);
   };
 
   // Add new folder
@@ -530,12 +471,11 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       setActiveTab('preview');
       toast.success('Code generated successfully!', { id: 'generate' });
       
-      // Add to chat history
-      setChatMessages(prev => [
-        ...prev,
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: 'I\'ve generated the code for you. Check the preview!' }
-      ]);
+      // Add to chat history and conversation history
+      const userMsg = { role: 'user', content: prompt, timestamp: new Date().toISOString() };
+      const aiMsg = { role: 'assistant', content: 'I\'ve generated the code for you. Check the preview!', timestamp: new Date().toISOString() };
+      setChatMessages(prev => [...prev, userMsg, aiMsg]);
+      setConversationHistory(prev => [...prev, { type: 'generate', user: prompt, response: 'Code generated successfully', timestamp: new Date().toISOString() }]);
       
     } catch (e) {
       const errorMsg = e.message || 'Generation failed';
@@ -632,7 +572,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
     }
 
     // Add user message to chat
-    const userMessage = { role: 'user', content: message };
+    const userMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
     setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setLoading(true);
@@ -664,12 +604,14 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       updateFileContent(activeFileId, cleaned);
       setPreviewError(null); // Clear any previous errors
       
-      // Add AI response to chat
+      // Add AI response to chat and conversation history
       const aiMessage = { 
         role: 'assistant', 
-        content: 'I\'ve updated the code according to your request. Check the preview to see the changes!' 
+        content: 'I\'ve updated the code according to your request. Check the preview to see the changes!',
+        timestamp: new Date().toISOString()
       };
       setChatMessages(prev => [...prev, aiMessage]);
+      setConversationHistory(prev => [...prev, { type: 'edit', user: message, response: 'Code updated successfully', timestamp: new Date().toISOString() }]);
       toast.success('Code updated!', { id: 'edit' });
       setActiveTab('preview');
 
@@ -678,7 +620,8 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       const errorMessage = { 
         role: 'assistant', 
         content: `Sorry, I encountered an error: ${errorMsg}. Please try again or rephrase your request.`, 
-        error: true 
+        error: true,
+        timestamp: new Date().toISOString()
       };
       setChatMessages(prev => [...prev, errorMessage]);
       toast.error(`Edit failed: ${errorMsg}`, { id: 'edit' });
@@ -696,13 +639,41 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
           <div key={node.id} className="pl-3">
             <div
               className="flex items-center gap-2 py-1 cursor-pointer hover:bg-purple-500/10 rounded"
-              onClick={() => toggleFolder(node.id)}
+              onClick={() => !editingNodeId && toggleFolder(node.id)}
             >
               <FiChevronRight
                 className={`w-4 h-4 transition-transform ${isExpanded ? 'transform rotate-90' : ''}`}
               />
               <FiFolder className="w-4 h-4 text-yellow-400" />
-              <span className="text-sm truncate">{node.name}</span>
+              {editingNodeId === node.id ? (
+                <input
+                  type="text"
+                  value={editingNodeName}
+                  onChange={(e) => setEditingNodeName(e.target.value)}
+                  onBlur={() => renameNode(node.id, editingNodeName)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      renameNode(node.id, editingNodeName);
+                    } else if (e.key === 'Escape') {
+                      setEditingNodeId(null);
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-1 bg-black/40 border border-purple-500/30 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  autoFocus
+                />
+              ) : (
+                <span 
+                  className="text-sm truncate flex-1"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startEditingNode(node.id, node.name);
+                  }}
+                  title="Double-click to rename"
+                >
+                  {node.name}
+                </span>
+              )}
             </div>
 
             {isExpanded && node.children && (
@@ -741,21 +712,51 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
             ? 'bg-purple-500/30 text-white'
             : 'text-purple-300 hover:bg-purple-500/20 hover:text-white'
             }`}
-          onClick={() => handleFileSelect(node.id)}
+          onClick={() => !editingNodeId && handleFileSelect(node.id)}
         >
-          <div className="flex items-center gap-2 truncate">
-            <FiFile className="w-4 h-4" />
-            <span className="text-sm truncate">{node.name}</span>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <FiFile className="w-4 h-4 flex-shrink-0" />
+            {editingNodeId === node.id ? (
+              <input
+                type="text"
+                value={editingNodeName}
+                onChange={(e) => setEditingNodeName(e.target.value)}
+                onBlur={() => renameNode(node.id, editingNodeName)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    renameNode(node.id, editingNodeName);
+                  } else if (e.key === 'Escape') {
+                    setEditingNodeId(null);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 bg-black/40 border border-purple-500/30 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                autoFocus
+              />
+            ) : (
+              <span 
+                className="text-sm truncate flex-1"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startEditingNode(node.id, node.name);
+                }}
+                title="Double-click to rename"
+              >
+                {node.name}
+              </span>
+            )}
           </div>
-      <button 
-            className="p-1 hover:bg-purple-500/30 rounded"
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteNode(node.id);
-            }}
-          >
-            <FiTrash2 className="w-3 h-3" />
-      </button>
+          {!editingNodeId && (
+            <button 
+              className="p-1 hover:bg-purple-500/30 rounded flex-shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteNode(node.id);
+              }}
+            >
+              <FiTrash2 className="w-3 h-3" />
+            </button>
+          )}
         </div>
       );
     });
@@ -936,239 +937,374 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
         }}
       />
       <div className="h-screen w-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
-      {/* Left Sidebar - File Explorer & Controls */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} transition-all duration-300 bg-black/30 backdrop-blur-sm border-r border-purple-500/20 flex flex-col`}>
-        <div className="p-4 border-b border-purple-500/20 flex items-center gap-3">
-          <button 
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-2 hover:bg-purple-500/20 rounded-lg transition-colors"
-          >
-            {sidebarCollapsed ? <FiChevronRight className="w-5 h-5" /> : <FiChevronLeft className="w-5 h-5" />}
-          </button>
+      {/* Left Sidebar - Lovable Style */}
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-96'} transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col`}>
+        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
           {!sidebarCollapsed && (
-            <div className="flex items-center gap-3">
-              <div className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                VibeCode
-              </div>
+            <div className="flex items-center gap-2">
+              <div className="font-semibold text-base text-white">VibeCode</div>
               <div className={`flex items-center gap-1 text-xs ${isServerRunning ? 'text-green-400' : 'text-red-400'}`}>
-                <div className={`w-2 h-2 rounded-full ${isServerRunning ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                {isServerRunning ? 'Server Online' : 'Server Offline'}
+                <div className={`w-1.5 h-1.5 rounded-full ${isServerRunning ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                {isServerRunning ? 'Online' : 'Offline'}
               </div>
             </div>
           )}
+          <button 
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white"
+          >
+            {sidebarCollapsed ? <FiChevronRight className="w-4 h-4" /> : <FiChevronLeft className="w-4 h-4" />}
+          </button>
         </div>
 
         {!sidebarCollapsed && (
-          <>
-            {/* File Explorer */}
-            <div className="p-4 flex-1 overflow-auto">
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-semibold text-purple-300">
-                  Explorer
-                </label>
-                <button
-                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
-                  onClick={() => addNewFile('src')}
-                >
-                  <FiPlus className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="space-y-1">
-                {renderFileTree(fileTree)}
-              </div>
-            </div>
-
-            {/* Prompt Section */}
-            <div className="p-4 border-t border-purple-500/20">
-              <label className="block text-sm font-semibold text-purple-300 mb-2">
-                Describe your app
-              </label>
-              <textarea
-                className="w-full h-24 bg-black/40 border border-purple-500/30 rounded-xl px-3 py-2 text-sm placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-                placeholder="e.g., Create a modern todo app with drag & drop..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-              />
-            </div>
-
-            {/* Model Selection */}
-            <div className="p-4 border-t border-purple-500/20">
-              <label className="block text-xs font-semibold text-purple-300 mb-1">
-                AI Model
-              </label>
-              <select
-                className="w-full bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              >
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast, Recommended)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Best Quality)</option>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Alternative)</option>
-                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Lightweight)</option>
-              </select>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="p-4 space-y-3">
-              <button
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
-                onClick={handleGenerate}
-                disabled={loading}
-              >
-                {loading ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Generating...
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Conversation History - Show recent edits/fixes */}
+            {conversationHistory.length > 0 && (
+              <div className="flex-1 overflow-auto p-4 space-y-3">
+                {conversationHistory.slice(-3).reverse().map((conv, idx) => (
+                  <div 
+                    key={idx} 
+                    className="p-3 bg-gray-800/50 rounded-lg border border-gray-700/50 hover:border-purple-500/50 transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (conv.type === 'generate') {
+                        setPrompt(conv.user);
+                        toast.info('Prompt loaded. Click Generate Code to use it.');
+                      }
+                    }}
+                  >
+                    <div className="text-white text-sm mb-1 line-clamp-2">{conv.user}</div>
+                    <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
+                      <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded">
+                        {conv.type === 'generate' ? 'Generated' : 'Edited'}
+                      </span>
+                      <span>{new Date(conv.timestamp).toLocaleTimeString()}</span>
+                    </div>
                   </div>
-                ) : (
-                  '✨ Generate Code'
-                )}
+                ))}
+              </div>
+            )}
+
+            {/* Action Buttons - Like Lovable */}
+            <div className="px-4 pb-2 space-y-2">
+              <button
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between"
+                onClick={handleGenerate}
+                disabled={loading || !prompt.trim()}
+              >
+                <span>{loading ? 'Generating...' : 'Generate Code'}</span>
+                {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
               </button>
 
               <button 
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                className="w-full bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between"
                 onClick={handleFix}
                 disabled={loading}
               >
-                {loading ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Fixing...
-                  </div>
-                ) : (
-                  '🔧 AI Fix'
-                )}
+                <span>{loading ? 'Fixing...' : 'AI Fix'}</span>
+                {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
               </button>
 
-              <button
-                className="w-full bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white text-sm px-4 py-3 rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                onClick={() => setShowChat(!showChat)}
-              >
-                <FiMessageCircle className="w-4 h-4" />
-                {showChat ? 'Hide Chat' : 'AI Chat'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  onClick={() => setShowCodeEditor(!showCodeEditor)}
+                >
+                  <FiCode className="w-4 h-4" />
+                  {showCodeEditor ? 'Hide' : 'Code'}
+                </button>
+                <button
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  onClick={() => setShowFileExplorer(!showFileExplorer)}
+                >
+                  <FiFolder className="w-4 h-4" />
+                  Files
+                </button>
+              </div>
             </div>
+
+            {/* File Explorer - Collapsible */}
+            {showFileExplorer && (
+              <div className="px-4 pb-2 max-h-48 overflow-auto border-t border-gray-700/50 pt-2">
+                <div className="space-y-1">
+                  {renderFileTree(fileTree)}
+                </div>
+              </div>
+            )}
 
             {/* Error Display */}
             {errorText && (
-              <div className="mx-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+              <div className="mx-4 mb-2 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
                 <div className="text-red-400 text-xs">
                   <strong>Error:</strong> {errorText}
                 </div>
               </div>
             )}
-          </>
+
+            {/* Main Prompt Input - "Ask VibeCode..." like Lovable */}
+            <div className="p-4 border-t border-gray-700/50 bg-gray-900/50">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
+                      e.preventDefault();
+                      handleGenerate();
+                    }
+                  }}
+                  placeholder="Ask VibeCode..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 pr-10 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  disabled={loading}
+                />
+                <button
+                  onClick={() => {
+                    if (prompt.trim()) {
+                      handleGenerate();
+                    }
+                  }}
+                  disabled={loading || !prompt.trim()}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white transition-colors disabled:opacity-30"
+                >
+                  <FiSend className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {/* Model Selection - Compact */}
+              <select
+                className="w-full mt-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              </select>
+
+              {/* Chat Toggle */}
+              <div className="flex gap-2 mt-2">
+                <button
+                  className={`flex-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                    showChat 
+                      ? 'bg-purple-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                  onClick={() => setShowChat(!showChat)}
+                >
+                  Chat
+                </button>
+                <button
+                  className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                >
+                  Visual edits
+                </button>
+              </div>
+            </div>
+
+            {/* Chat Messages - Show when chat is active */}
+            {showChat && chatMessages.length > 0 && (
+              <div className="flex-1 overflow-auto p-4 space-y-3 border-t border-gray-700/50 bg-gray-900/30">
+                {chatMessages.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : msg.error
+                          ? 'bg-red-900/30 text-red-300 border border-red-500/30'
+                          : 'bg-gray-700 text-gray-200'
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+
+            {/* Chat Input - Only show when chat is active */}
+            {showChat && (
+              <div className="p-4 border-t border-gray-700/50 bg-gray-900/50">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (chatInput.trim()) {
+                          handleChatEdit(chatInput);
+                        }
+                      }
+                    }}
+                    placeholder="Ask AI to edit your code..."
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    disabled={loading}
+                  />
+                  <button
+                    onClick={() => {
+                      if (chatInput.trim()) {
+                        handleChatEdit(chatInput);
+                      }
+                    }}
+                    disabled={loading || !chatInput.trim()}
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FiSend className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* AI Chat Panel */}
-      {showChat && (
-        <div className="w-80 bg-black/40 backdrop-blur-sm border-r border-purple-500/20 flex flex-col">
-          <div className="p-4 border-b border-purple-500/20 flex items-center justify-between">
-            <h3 className="font-semibold text-purple-300 flex items-center gap-2">
-              <FiMessageCircle className="w-4 h-4" />
-              AI Assistant
-            </h3>
+      {/* Main Content Area - Preview First */}
+      <div className="flex-1 flex flex-col min-w-0 relative bg-white">
+        {/* Top Toolbar - Clean Lovable Style */}
+        <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-medium text-gray-700">Preview</div>
+            <div className="text-xs text-gray-500">Last saved version</div>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowChat(false)}
-              className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+              className={`px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 ${
+                activeTab === 'preview'
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveTab('preview')}
             >
-              <FiX className="w-4 h-4" />
+              <FiEye className="w-3.5 h-3.5" />
+              Preview
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 ${
+                activeTab === 'console'
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveTab('console')}
+            >
+              <FiTerminal className="w-3.5 h-3.5" />
+              Console
+              {consoleLogs.length > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                  {consoleLogs.length > 9 ? '9+' : consoleLogs.length}
+                </span>
+              )}
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 ${
+                showCodeEditor
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+              onClick={() => setShowCodeEditor(!showCodeEditor)}
+            >
+              <FiCode className="w-3.5 h-3.5" />
+              Code
+            </button>
+            <button
+              onClick={() => {
+                setPreviewKey(prev => prev + 1);
+                setConsoleLogs([]);
+                setPreviewError(null);
+                toast.success('Preview refreshed');
+              }}
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-600"
+              title="Refresh Preview"
+            >
+              <FiRefreshCw className="w-4 h-4" />
             </button>
           </div>
-
-          {/* Chat Messages */}
-          <div className="flex-1 overflow-auto p-4 space-y-4">
-            {chatMessages.length === 0 ? (
-              <div className="text-center text-purple-300/50 text-sm py-8">
-                <FiMessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>Start a conversation to edit your code!</p>
-                <p className="text-xs mt-2">Try: "Add a dark mode toggle" or "Make the buttons larger"</p>
-              </div>
-            ) : (
-              chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                      msg.role === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : msg.error
-                        ? 'bg-red-900/30 text-red-300 border border-red-500/30'
-                        : 'bg-purple-500/20 text-purple-200'
-                    }`}
-                  >
-                    {msg.content}
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Chat Input */}
-          <div className="p-4 border-t border-purple-500/20">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (chatInput.trim()) {
-                      handleChatEdit(chatInput);
-                    }
-                  }
-                }}
-                placeholder="Ask AI to edit your code..."
-                className="flex-1 bg-black/40 border border-purple-500/30 rounded-lg px-3 py-2 text-sm placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                disabled={loading}
-              />
-              <button
-                onClick={() => {
-                  if (chatInput.trim()) {
-                    handleChatEdit(chatInput);
-                  }
-                }}
-                disabled={loading || !chatInput.trim()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <FiSend className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
         </div>
-      )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Editor with Tabs */}
-        <div className="flex-1 min-h-0 flex">
-          {/* Code Editor */}
-          <div className="flex-1 min-h-0 bg-black/20 backdrop-blur-sm border-r border-purple-500/20 flex flex-col">
-            {/* Tab Bar */}
-            <div className="flex items-center bg-black/40 border-b border-purple-500/20">
-              <div className="flex items-center gap-2 px-4 py-2">
+        {/* Preview Area - Full Screen by Default */}
+        <div className="flex-1 min-h-0 relative">
+          {activeTab === 'preview' && (
+            <div className="absolute inset-0">
+              <iframe 
+                ref={iframeRef}
+                key={previewKey}
+                srcDoc={previewSource}
+                title="preview"
+                className="w-full h-full bg-white" 
+                sandbox="allow-scripts allow-same-origin"
+              />
+            </div>
+          )}
+          {activeTab === 'console' && (
+            <div className="absolute inset-0 bg-black/80 p-4 font-mono text-sm overflow-auto">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-white font-semibold">Console Output</span>
+                <button
+                  onClick={() => {
+                    setConsoleLogs([]);
+                    setPreviewError(null);
+                  }}
+                  className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-700"
+                >
+                  Clear
+                </button>
+              </div>
+              {consoleLogs.length === 0 ? (
+                <div className="text-gray-500 text-center py-8">
+                  <FiTerminal className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p>No console output yet.</p>
+                  <p className="text-xs mt-2">Console logs from your code will appear here automatically.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {consoleLogs.map((log, index) => {
+                    const logColors = {
+                      error: 'bg-red-900/20 text-red-400 border-l-2 border-red-500',
+                      warn: 'bg-yellow-900/20 text-yellow-400 border-l-2 border-yellow-500',
+                      info: 'bg-blue-900/20 text-blue-400 border-l-2 border-blue-500',
+                      log: 'bg-gray-800/20 text-green-400 border-l-2 border-green-500'
+                    };
+                    return (
+                      <div key={index} className={`p-2 rounded ${logColors[log.type] || logColors.log} hover:opacity-80 transition-opacity`}>
+                        <div className="flex items-start gap-2">
+                          <span className="text-gray-500 text-xs flex-shrink-0">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                          <span className="font-semibold text-xs uppercase mr-2 flex-shrink-0">{log.type}:</span>
+                          <span className="whitespace-pre-wrap break-words flex-1">{log.message}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Code Editor - Slides in from right when toggled */}
+        {showCodeEditor && (
+          <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gray-900 border-l border-gray-800 flex flex-col shadow-2xl z-50 animate-slide-in-right">
+            {/* Code Editor Header */}
+            <div className="flex items-center bg-gray-800 border-b border-gray-700 px-4 py-2">
+              <div className="flex items-center gap-2 flex-1">
                 <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                 <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                 <div className="w-3 h-3 bg-green-500 rounded-full"></div>
               </div>
-
-              {/* File Tabs */}
               <div className="flex-1 flex">
                 {openTabs.map(tabId => {
                   const tab = findFileById(fileTree, tabId);
                   if (!tab) return null;
-
                   return (
                     <div
                       key={tabId}
-                      className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-r border-purple-500/20 transition-colors ${activeFileId === tabId
-                        ? 'bg-purple-500/30 text-white'
-                        : 'bg-black/20 text-purple-300 hover:bg-purple-500/20 hover:text-white'
+                      className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-r border-gray-700 transition-colors ${activeFileId === tabId
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
                         }`}
                       onClick={() => setActiveFileId(tabId)}
                     >
@@ -1176,7 +1312,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
                       <span className="text-sm">{tab.name}</span>
                       {openTabs.length > 1 && (
                         <button 
-                          className="ml-2 hover:bg-purple-500/30 rounded p-1"
+                          className="ml-2 hover:bg-gray-700 rounded p-1"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleTabClose(tabId);
@@ -1189,24 +1325,41 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
                   );
                 })}
               </div>
-
-              {/* Editor Actions */}
-              <div className="flex items-center gap-2 px-4">
+              <div className="flex items-center gap-2">
                 <button
-                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
-                  title="Save"
+                  onClick={() => setShowFileExplorer(!showFileExplorer)}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+                  title="Toggle File Explorer"
                 >
-                  <FiSave className="w-4 h-4" />
+                  <FiFolder className="w-4 h-4" />
                 </button>
-                <button 
-                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
-                  title="Download"
-                  onClick={downloadCurrentFile}
+                <button
+                  onClick={() => setShowCodeEditor(false)}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+                  title="Close Code Editor"
                 >
-                  <FiDownload className="w-4 h-4" />
+                  <FiX className="w-4 h-4" />
                 </button>
               </div>
             </div>
+
+            {/* File Explorer - Inside Code Editor */}
+            {showFileExplorer && (
+              <div className="border-b border-gray-700 bg-gray-800/50 p-2 max-h-40 overflow-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-purple-300">Files</label>
+                  <button
+                    className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                    onClick={() => setShowFileExplorer(false)}
+                  >
+                    <FiX className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {renderFileTree(fileTree)}
+                </div>
+              </div>
+            )}
 
             {/* Monaco Editor */}
             <div className="flex-1">
@@ -1225,12 +1378,12 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
                   scrollBeyondLastLine: false,
                   renderWhitespace: 'all',
                   lineNumbers: 'on',
-                folding: true,
-                showFoldingControls: 'always',
-                matchBrackets: 'always',
-                autoClosingBrackets: 'always',
-                autoIndent: 'full',
-                tabSize: 2,
+                  folding: true,
+                  showFoldingControls: 'always',
+                  matchBrackets: 'always',
+                  autoClosingBrackets: 'always',
+                  autoIndent: 'full',
+                  tabSize: 2,
                   insertSpaces: true,
                   suggestOnTriggerCharacters: true,
                   quickSuggestions: true,
@@ -1247,113 +1400,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
               />
             </div>
           </div>
-
-          {/* Right Panel - Preview */}
-          <div className="flex-1 min-h-0 flex flex-col bg-black/20 backdrop-blur-sm">
-            {/* Tab Headers */}
-            <div className="px-4 py-3 border-b border-purple-500/20 flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  className={`px-3 py-1 text-xs rounded-lg transition-colors flex items-center gap-1 ${activeTab === 'preview'
-                    ? 'bg-purple-500 text-white'
-                    : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
-                    }`}
-                  onClick={() => setActiveTab('preview')}
-                >
-                  <FiEye className="w-3 h-3" />
-                  Preview
-                </button>
-                <button
-                  className={`px-3 py-1 text-xs rounded-lg transition-colors flex items-center gap-1 ${activeTab === 'console'
-                    ? 'bg-purple-500 text-white'
-                    : 'text-purple-300 hover:text-white hover:bg-purple-500/20'
-                    }`}
-                  onClick={() => setActiveTab('console')}
-                >
-                  <FiTerminal className="w-3 h-3" />
-                  Console
-                  {consoleLogs.length > 0 && (
-                    <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 ml-1">
-                      {consoleLogs.length > 9 ? '9+' : consoleLogs.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Preview Area */}
-            <div className="flex-1 min-h-0">
-              {activeTab === 'preview' && (
-                <div className="relative w-full h-full">
-                  <iframe 
-                    ref={iframeRef}
-                    key={previewKey}
-                    srcDoc={previewSource}
-                    title="preview"
-                    className="w-full h-full bg-white" 
-                    sandbox="allow-scripts allow-same-origin"
-                  />
-                  <button
-                    onClick={() => {
-                      setPreviewKey(prev => prev + 1);
-                      setConsoleLogs([]);
-                      setPreviewError(null);
-                      toast.success('Preview refreshed');
-                    }}
-                    className="absolute top-2 right-2 p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-lg transition-colors z-10"
-                    title="Refresh Preview"
-                  >
-                    <FiRefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-              {activeTab === 'console' && (
-                <div className="h-full bg-black/80 p-4 font-mono text-sm overflow-auto">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-white font-semibold">Console Output</span>
-                    <button
-                      onClick={() => {
-                        setConsoleLogs([]);
-                        setPreviewError(null);
-                      }}
-                      className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-700"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {consoleLogs.length === 0 ? (
-                    <div className="text-gray-500 text-center py-8">
-                      No console output yet. Run your code to see logs here.
-                    </div>
-                  ) : (
-                      <div className="space-y-1">
-                        {consoleLogs.map((log, index) => {
-                          const logColors = {
-                            error: 'bg-red-900/20 text-red-400 border-l-2 border-red-500',
-                            warn: 'bg-yellow-900/20 text-yellow-400 border-l-2 border-yellow-500',
-                            info: 'bg-blue-900/20 text-blue-400 border-l-2 border-blue-500',
-                            log: 'bg-gray-800/20 text-green-400 border-l-2 border-green-500'
-                          };
-                          return (
-                            <div key={index} className={`p-2 rounded ${logColors[log.type] || logColors.log}`}>
-                              <span className="text-gray-500 text-xs">[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
-                              <span className="font-semibold text-xs uppercase mr-2">{log.type}:</span>
-                              <span className="whitespace-pre-wrap break-words">{log.message}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
     </>

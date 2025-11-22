@@ -16,12 +16,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vibecode')
 .then(() => console.log('MongoDB connected'))
-.catch((err) => console.error('MongoDB connection error:', err));
+.catch((err) => {
+  console.error('MongoDB connection error:', err);
+  console.log('Continuing without MongoDB...');
+});
 
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
