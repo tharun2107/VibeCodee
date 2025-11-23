@@ -32,7 +32,9 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/prompts', promptRoutes);
 
 const geminiRoutes = require('./routes/gemini');
+const netlifyRoutes = require('./routes/netlify');
 app.use('/api', geminiRoutes);
+app.use('/api', netlifyRoutes);
 
 // Start server
 app.listen(PORT, () => {

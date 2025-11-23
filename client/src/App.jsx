@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
-import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw } from 'react-icons/fi';
+import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy } from 'react-icons/fi';
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -83,6 +83,28 @@ const findFileById = (tree, id) => {
   return null;
 };
 
+// Collect all files from file tree recursively
+const collectAllFiles = (nodes, basePath = '') => {
+  const files = [];
+  
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      const filePath = basePath ? `${basePath}/${node.name}` : node.name;
+      files.push({
+        path: filePath,
+        name: node.name,
+        content: node.content || ''
+      });
+    } else if (node.type === 'folder' && node.children) {
+      const folderPath = basePath ? `${basePath}/${node.name}` : node.name;
+      const folderFiles = collectAllFiles(node.children, folderPath);
+      files.push(...folderFiles);
+    }
+  }
+  
+  return files;
+};
+
 // Extract code from Gemini response
 function extractCodeBlock(text) {
   if (!text) return '';
@@ -160,6 +182,8 @@ function App() {
   const [conversationHistory, setConversationHistory] = useState([]); // Store all conversations
   const [editingNodeId, setEditingNodeId] = useState(null); // For renaming files
   const [editingNodeName, setEditingNodeName] = useState(''); // For renaming files
+  const [deploying, setDeploying] = useState(false); // Deployment status
+  const [deployedUrl, setDeployedUrl] = useState(null); // Deployed site URL
   const iframeRef = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -630,6 +654,94 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
     }
   }, [apiBase, model, activeFileId, getCurrentFileContent]);
 
+  // Handle Netlify deployment
+  const handleDeployToNetlify = useCallback(async () => {
+    // Collect all files from the project
+    const allFiles = collectAllFiles(fileTree);
+    
+    if (allFiles.length === 0) {
+      toast.error('No files to deploy! Generate some code first.');
+      return;
+    }
+
+    // Filter out empty files and clean up paths (remove "project/" prefix if present)
+    const validFiles = allFiles
+      .filter(file => file.content && file.content.trim().length > 0)
+      .map(file => ({
+        ...file,
+        path: file.path.replace(/^project\//, '') // Remove "project/" prefix for Netlify
+      }));
+    
+    if (validFiles.length === 0) {
+      toast.error('No valid files to deploy!');
+      return;
+    }
+
+    setDeploying(true);
+    toast.loading('Deploying to Netlify...', { id: 'deploy' });
+
+    try {
+      // Generate a site name from the prompt or use timestamp
+      const siteName = prompt 
+        ? `vibecode-${prompt.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30)}-${Date.now()}`
+        : `vibecode-${Date.now()}`;
+
+      const res = await fetch(`${apiBase}/deploy/netlify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: validFiles,
+          siteName: siteName
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.details || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      
+      if (data.success && data.url) {
+        setDeployedUrl(data.url);
+        toast.success(
+          <div>
+            <p className="font-semibold">Deployed successfully! 🚀</p>
+            <a 
+              href={data.url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:underline text-sm"
+            >
+              {data.url}
+            </a>
+          </div>,
+          { 
+            id: 'deploy',
+            duration: 10000 
+          }
+        );
+      } else {
+        throw new Error('Deployment succeeded but no URL returned');
+      }
+
+    } catch (e) {
+      const errorMsg = e.message || 'Deployment failed';
+      toast.error(`Deployment failed: ${errorMsg}`, { id: 'deploy' });
+      console.error('Deploy error:', errorMsg);
+    } finally {
+      setDeploying(false);
+    }
+  }, [apiBase, fileTree, prompt]);
+
+  // Copy deployed URL to clipboard
+  const copyDeployedUrl = useCallback(() => {
+    if (deployedUrl) {
+      navigator.clipboard.writeText(deployedUrl);
+      toast.success('URL copied to clipboard!');
+    }
+  }, [deployedUrl]);
+
   // Render file tree recursively
   const renderFileTree = (nodes) => {
     return nodes.map(node => {
@@ -1021,6 +1133,42 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
                   Files
                 </button>
               </div>
+
+              {/* Deploy to Netlify Button */}
+              <button
+                className="w-full bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white text-sm px-4 py-2.5 rounded-lg font-medium transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                onClick={handleDeployToNetlify}
+                disabled={deploying || loading}
+              >
+                <FiGlobe className="w-4 h-4" />
+                {deploying ? 'Deploying...' : '🚀 Deploy to Netlify'}
+                {deploying && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+              </button>
+
+              {/* Deployed URL Display */}
+              {deployedUrl && (
+                <div className="p-3 bg-teal-900/20 border border-teal-500/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-teal-300">Live Site</span>
+                    <button
+                      onClick={copyDeployedUrl}
+                      className="p-1 hover:bg-teal-500/20 rounded transition-colors"
+                      title="Copy URL"
+                    >
+                      <FiCopy className="w-3 h-3 text-teal-400" />
+                    </button>
+                  </div>
+                  <a
+                    href={deployedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-400 hover:text-teal-300 text-xs break-all flex items-center gap-1"
+                  >
+                    {deployedUrl}
+                    <FiExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* File Explorer - Collapsible */}
