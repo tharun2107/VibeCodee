@@ -682,14 +682,23 @@ async function deployToNetlify(files, siteName) {
   // 6) Create Netlify site
   const client = getNetlifyClient();
 
-  let sanitizedName = (siteName || `vibecode-${Date.now()}`)
+  // Sanitize site name while preserving aetherbuild prefix
+  let sanitizedName = siteName || `aetherbuild-project-${Date.now()}`;
+  
+  // Ensure it's already sanitized (frontend should handle this, but double-check)
+  sanitizedName = sanitizedName
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  if (!sanitizedName) {
-    sanitizedName = `vibecode-${Date.now()}`;
+  // Ensure aetherbuild prefix is present
+  if (!sanitizedName.startsWith('aetherbuild-')) {
+    sanitizedName = `aetherbuild-${sanitizedName}`;
+  }
+
+  if (!sanitizedName || sanitizedName === 'aetherbuild-') {
+    sanitizedName = `aetherbuild-project-${Date.now()}`;
   }
 
   console.log('Creating Netlify site with name:', sanitizedName);
@@ -699,6 +708,30 @@ async function deployToNetlify(files, siteName) {
   const siteId = createdSite.id;
 
   console.log('Created Netlify site:', siteId, createdSite.name);
+
+  // Disable password protection on the site
+  try {
+    console.log('Disabling password protection...');
+    // Try multiple approaches to ensure password protection is disabled
+    await client.patch(`/sites/${siteId}`, {
+      password: null,
+      visitor_access: 'public' // Ensure public access
+    });
+    console.log('Password protection disabled');
+  } catch (error) {
+    // If PATCH doesn't work, try updating access settings via site settings
+    try {
+      console.log('Trying alternative method to disable password protection...');
+      // Some Netlify accounts might need this approach
+      await client.put(`/sites/${siteId}/access`, {
+        password: null
+      });
+      console.log('Password protection disabled via access endpoint');
+    } catch (error2) {
+      console.warn('Could not disable password protection (may not be needed):', error2.message);
+      // Continue anyway - the site might not have password protection enabled
+    }
+  }
 
   // 7) Zip built files and deploy
   console.log(`Creating ZIP from ${builtFiles.length} built files...`);

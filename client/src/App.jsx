@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
-import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy } from 'react-icons/fi';
+import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy, FiMic, FiImage, FiBarChart2, FiPackage } from 'react-icons/fi';
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import LandingPage from './components/LandingPage';
 import Auth from './components/Auth';
 import ProjectDashboard from './components/ProjectDashboard';
+import VoiceToCode from './components/features/VoiceToCode';
+import ImageToCode from './components/features/ImageToCode';
+import AIMentor from './components/features/AIMentor';
+import PerformanceAnalytics from './components/features/PerformanceAnalytics';
+import ComponentMarketplace from './components/features/ComponentMarketplace';
 
 // File structure helper - Start with empty project
 const createFileStructure = () => [
@@ -33,7 +38,7 @@ const createFileStructure = () => [
         <p className="text-gray-600 mb-8">Start by describing what you want to build in the prompt area.</p>
         <div className="inline-block bg-purple-100 text-purple-800 px-4 py-2 rounded-lg">
           <p className="text-sm">✨ Your app will appear here</p>
-        </div>
+      </div>
       </div>
     </div>
   );
@@ -200,6 +205,7 @@ function App() {
   const [editingNodeName, setEditingNodeName] = useState(''); // For renaming files
   const [deploying, setDeploying] = useState(false); // Deployment status
   const [deployedUrl, setDeployedUrl] = useState(null); // Deployed site URL
+  const [activeFeaturePanel, setActiveFeaturePanel] = useState(null); // 'voice' | 'image' | 'analytics' | 'marketplace' | null
   const iframeRef = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -609,7 +615,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
     }
     
     setLoading(true); 
-    setErrorText('');
+    setErrorText(''); 
     setPreviewError(null);
     setConsoleLogs([]);
     toast.loading('Generating code...', { id: 'generate' });
@@ -1085,6 +1091,39 @@ body {
   }, []);
 
   // Handle Netlify deployment
+  // Helper function to extract h1 text from code
+  const extractH1Text = useCallback((code) => {
+    if (!code) return null;
+    
+    // Try to find h1 tags in JSX
+    const h1Matches = [
+      // Match <h1>text</h1>
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      // Match <h1 className="...">text</h1>
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      // Match h1 with nested elements: <h1>text {variable}</h1>
+      /<h1[^>]*>([^<{]+)/i,
+    ];
+    
+    for (const pattern of h1Matches) {
+      const match = code.match(pattern);
+      if (match && match[1]) {
+        // Clean up the text: remove extra whitespace, quotes, etc.
+        let text = match[1].trim();
+        // Remove template literals and variables
+        text = text.replace(/\{[^}]*\}/g, '').trim();
+        // Remove quotes
+        text = text.replace(/['"]/g, '').trim();
+        // Take first 30 characters
+        if (text.length > 0) {
+          return text.substring(0, 30);
+        }
+      }
+    }
+    
+    return null;
+  }, []);
+
   const handleDeployToNetlify = useCallback(async () => {
     // Collect all files from the project
     const allFiles = collectAllFiles(fileTree);
@@ -1116,10 +1155,54 @@ body {
     toast.loading('Deploying to Netlify...', { id: 'deploy' });
 
     try {
-      // Generate a site name from the prompt or use timestamp
-      const siteName = prompt 
-        ? `vibecode-${prompt.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30)}-${Date.now()}`
-        : `vibecode-${Date.now()}`;
+      // Generate site name with aetherbuild prefix
+      let siteNameBase = '';
+      
+      // Check if project name is not "Untitled Project" or "untitled"
+      const normalizedProjectName = (projectName || '').trim().toLowerCase();
+      if (normalizedProjectName && 
+          normalizedProjectName !== 'untitled project' && 
+          normalizedProjectName !== 'untitled' &&
+          normalizedProjectName.length > 0) {
+        // Use project name
+        siteNameBase = projectName;
+      } else {
+        // Try to extract h1 from App.jsx
+        const appFile = validFiles.find(f => 
+          f.path === 'src/App.jsx' || 
+          f.path === 'App.jsx' ||
+          f.name === 'App.jsx'
+        );
+        
+        if (appFile && appFile.content) {
+          const h1Text = extractH1Text(appFile.content);
+          if (h1Text) {
+            siteNameBase = h1Text;
+          }
+        }
+        
+        // If still no name, use a generic name
+        if (!siteNameBase) {
+          siteNameBase = 'project';
+        }
+      }
+      
+      // Sanitize the name: lowercase, replace spaces/special chars with hyphens
+      const sanitized = siteNameBase
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
+        .replace(/\s+/g, '-') // Replace spaces with hyphens
+        .replace(/-+/g, '-') // Replace multiple hyphens with single
+        .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+        .substring(0, 40); // Limit length
+      
+      // Generate random suffix for uniqueness (4-6 chars)
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      
+      // Final site name: aetherbuild-{sanitized-name}-{random}
+      const siteName = `aetherbuild-${sanitized}-${randomSuffix}`;
+      
+      console.log('Generated site name:', siteName);
 
       const res = await fetch(`${apiBase}/deploy/netlify`, {
         method: 'POST',
@@ -1181,7 +1264,7 @@ body {
     } finally {
       setDeploying(false);
     }
-  }, [apiBase, fileTree, prompt]);
+  }, [apiBase, fileTree, prompt, projectName, extractH1Text]);
 
   // Copy deployed URL to clipboard
   const copyDeployedUrl = useCallback(() => {
@@ -1241,7 +1324,7 @@ body {
               <div className="pl-4">
                 {renderFileTree(node.children)}
                 <div className="flex gap-2 mt-1 ml-1">
-                  <button
+                <button
                     className="flex items-center gap-1 text-xs text-purple-300 hover:text-purple-100"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1258,7 +1341,7 @@ body {
                     }}
                   >
                     <FiPlus className="w-3 h-3" /> Folder
-                  </button>
+                </button>
                 </div>
               </div>
             )}
@@ -1308,15 +1391,15 @@ body {
             )}
           </div>
           {!editingNodeId && (
-            <button 
+      <button 
               className="p-1 hover:bg-purple-500/30 rounded flex-shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNode(node.id);
-              }}
-            >
-              <FiTrash2 className="w-3 h-3" />
-            </button>
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteNode(node.id);
+            }}
+          >
+            <FiTrash2 className="w-3 h-3" />
+      </button>
           )}
         </div>
       );
@@ -1475,7 +1558,7 @@ body {
   }, []);
   // Routing Logic
   if (view === 'landing') {
-    return (
+  return (
       <>
         <Toaster position="top-right" />
         <LandingPage onGetStarted={() => setView('auth')} />
@@ -1531,7 +1614,7 @@ body {
           },
         }}
       />
-      <div className="h-screen w-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
+    <div className="h-screen w-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
       {/* Left Sidebar - Lovable Style */}
       <div className={`${sidebarCollapsed ? 'w-16' : 'w-96'} transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col`}>
         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
@@ -1570,7 +1653,7 @@ body {
           </button>
         </div>
 
-        {!sidebarCollapsed && (
+          {!sidebarCollapsed && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Conversation History - Show recent edits/fixes */}
             {conversationHistory.length > 0 && (
@@ -1592,11 +1675,11 @@ body {
                         {conv.type === 'generate' ? 'Generated' : 'Edited'}
                       </span>
                       <span>{new Date(conv.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
+              </div>
+                ))}
+            </div>
+          )}
 
             {/* Action Buttons - Like Lovable */}
             <div className="px-4 pb-2 space-y-2">
@@ -1642,6 +1725,59 @@ body {
                   <FiFolder className="w-4 h-4" />
                   Files
                 </button>
+        </div>
+
+              {/* AI Features Section */}
+              <div className="pt-2 border-t border-gray-700/50 mt-2">
+                <div className="px-2 mb-2">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">AI Features</span>
+                </div>
+                <div className="space-y-2">
+                <button
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      activeFeaturePanel === 'voice'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                    }`}
+                    onClick={() => setActiveFeaturePanel(activeFeaturePanel === 'voice' ? null : 'voice')}
+                  >
+                    <FiMic className="w-4 h-4" />
+                    Voice to Code
+                  </button>
+                  <button
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      activeFeaturePanel === 'image'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                    }`}
+                    onClick={() => setActiveFeaturePanel(activeFeaturePanel === 'image' ? null : 'image')}
+                  >
+                    <FiImage className="w-4 h-4" />
+                    Image to Code
+                  </button>
+                  <button
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      activeFeaturePanel === 'analytics'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                    }`}
+                    onClick={() => setActiveFeaturePanel(activeFeaturePanel === 'analytics' ? null : 'analytics')}
+                  >
+                    <FiBarChart2 className="w-4 h-4" />
+                    Analytics
+                  </button>
+                  <button
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      activeFeaturePanel === 'marketplace'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                    }`}
+                    onClick={() => setActiveFeaturePanel(activeFeaturePanel === 'marketplace' ? null : 'marketplace')}
+                  >
+                    <FiPackage className="w-4 h-4" />
+                    Marketplace
+                </button>
+              </div>
               </div>
 
               {/* Deploy to Netlify Button */}
@@ -1684,10 +1820,10 @@ body {
             {/* File Explorer - Collapsible */}
             {showFileExplorer && (
               <div className="px-4 pb-2 max-h-48 overflow-auto border-t border-gray-700/50 pt-2">
-                <div className="space-y-1">
-                  {renderFileTree(fileTree)}
-                </div>
+              <div className="space-y-1">
+                {renderFileTree(fileTree)}
               </div>
+            </div>
             )}
 
             {/* Error Display */}
@@ -1704,8 +1840,8 @@ body {
               <div className="relative">
                 <input
                   type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
                       e.preventDefault();
@@ -1727,8 +1863,8 @@ body {
                 >
                   <FiSend className="w-4 h-4" />
                 </button>
-              </div>
-              
+            </div>
+
               {/* Model Selection - Compact */}
               <select
                 className="w-full mt-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-purple-500"
@@ -1741,7 +1877,7 @@ body {
 
               {/* Chat Toggle */}
               <div className="flex gap-2 mt-2">
-                <button
+              <button
                   className={`flex-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
                     showChat 
                       ? 'bg-purple-600 text-white' 
@@ -1802,7 +1938,7 @@ body {
                     }}
                     placeholder="Ask AI to edit your code..."
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    disabled={loading}
+                disabled={loading}
                   />
                   <button
                     onClick={() => {
@@ -1815,7 +1951,7 @@ body {
                   >
                     <FiSend className="w-4 h-4" />
                   </button>
-                </div>
+                  </div>
               </div>
             )}
           </div>
@@ -1841,7 +1977,7 @@ body {
             >
               <FiEye className="w-3.5 h-3.5" />
               Preview
-            </button>
+              </button>
             <button
               className={`px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 ${
                 activeTab === 'console'
@@ -1902,7 +2038,7 @@ body {
             <div className="absolute inset-0 bg-black/80 p-4 font-mono text-sm overflow-auto">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-white font-semibold">Console Output</span>
-                <button
+              <button 
                   onClick={() => {
                     setConsoleLogs([]);
                     setPreviewError(null);
@@ -1917,8 +2053,8 @@ body {
                   <FiTerminal className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p>No console output yet.</p>
                   <p className="text-xs mt-2">Console logs from your code will appear here automatically.</p>
-                </div>
-              ) : (
+                  </div>
+                ) : (
                 <div className="space-y-1">
                   {consoleLogs.map((log, index) => {
                     const logColors = {
@@ -1941,7 +2077,83 @@ body {
               )}
             </div>
           )}
-        </div>
+            </div>
+
+        {/* AI Features Panel - Slides in from right when toggled */}
+        {activeFeaturePanel && (
+          <div className={`absolute right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-800 flex flex-col shadow-2xl z-40 animate-slide-in-right ${showCodeEditor ? 'right-1/2' : ''}`}>
+            {/* Feature Panel Header */}
+            <div className="flex items-center justify-between bg-gray-800 border-b border-gray-700 px-4 py-3">
+              <div className="flex items-center gap-2">
+                {activeFeaturePanel === 'voice' && (
+                  <>
+                    <FiMic className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-white font-semibold">Voice to Code</h3>
+                  </>
+                )}
+                {activeFeaturePanel === 'image' && (
+                  <>
+                    <FiImage className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-white font-semibold">Image to Code</h3>
+                  </>
+                )}
+                {activeFeaturePanel === 'analytics' && (
+                  <>
+                    <FiBarChart2 className="w-5 h-5 text-orange-400" />
+                    <h3 className="text-white font-semibold">Performance Analytics</h3>
+                  </>
+                )}
+                {activeFeaturePanel === 'marketplace' && (
+                  <>
+                    <FiPackage className="w-5 h-5 text-indigo-400" />
+                    <h3 className="text-white font-semibold">Component Marketplace</h3>
+                  </>
+                )}
+                </div>
+              <button
+                onClick={() => setActiveFeaturePanel(null)}
+                className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+                title="Close Panel"
+              >
+                <FiX className="w-4 h-4" />
+              </button>
+              </div>
+
+            {/* Feature Panel Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {activeFeaturePanel === 'voice' && (
+                <VoiceToCode 
+                  onCodeGenerated={(code) => {
+                    updateFileContent(activeFileId, code);
+                    setActiveFeaturePanel(null); // Close panel after code generation
+                  }} 
+                />
+              )}
+              {activeFeaturePanel === 'image' && (
+                <ImageToCode 
+                  onCodeGenerated={(code) => {
+                    updateFileContent(activeFileId, code);
+                    setActiveFeaturePanel(null); // Close panel after code generation
+                  }} 
+                />
+              )}
+              {activeFeaturePanel === 'analytics' && (
+                <PerformanceAnalytics fileTree={fileTree} activeFileId={activeFileId} />
+              )}
+              {activeFeaturePanel === 'marketplace' && (
+                <ComponentMarketplace 
+                  onComponentSelected={(code) => {
+                    updateFileContent(activeFileId, code);
+                    setActiveFeaturePanel(null); // Close panel after component selection
+                  }} 
+                />
+        )}
+      </div>
+          </div>
+        )}
+
+        {/* AI Mentor - Always available */}
+        <AIMentor />
 
         {/* Code Editor - Slides in from right when toggled */}
         {showCodeEditor && (
@@ -2006,16 +2218,16 @@ body {
               <div className="border-b border-gray-700 bg-gray-800/50 p-2 max-h-40 overflow-auto">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-purple-300">Files</label>
-                  <button
-                    className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                <button 
+                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
                     onClick={() => setShowFileExplorer(false)}
-                  >
+                >
                     <FiX className="w-3 h-3" />
-                  </button>
-                </div>
+                </button>
+              </div>
                 <div className="space-y-1">
                   {renderFileTree(fileTree)}
-                </div>
+            </div>
               </div>
             )}
 
@@ -2036,12 +2248,12 @@ body {
                   scrollBeyondLastLine: false,
                   renderWhitespace: 'all',
                   lineNumbers: 'on',
-                  folding: true,
-                  showFoldingControls: 'always',
-                  matchBrackets: 'always',
-                  autoClosingBrackets: 'always',
-                  autoIndent: 'full',
-                  tabSize: 2,
+                folding: true,
+                showFoldingControls: 'always',
+                matchBrackets: 'always',
+                autoClosingBrackets: 'always',
+                autoIndent: 'full',
+                tabSize: 2,
                   insertSpaces: true,
                   suggestOnTriggerCharacters: true,
                   quickSuggestions: true,
@@ -2059,8 +2271,8 @@ body {
             </div>
           </div>
         )}
-      </div>
-    </div>
+              </div>
+            </div>
     </>
   );
 }

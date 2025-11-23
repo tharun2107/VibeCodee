@@ -1,5 +1,5 @@
 const express = require('express');
-const { generateCode, fixCode, editCode } = require('../services/gemini');
+const { generateCode, fixCode, editCode, generateCodeFromImage } = require('../services/gemini');
 
 const router = express.Router();
 
@@ -47,6 +47,21 @@ router.post('/edit', async (req, res) => {
     res.json({ code: editedCode });
   } catch (err) {
     console.error('Edit error:', err);
+    res.status(500).json({ error: 'Gemini API error', details: err.message });
+  }
+});
+
+// Generate code from image using Gemini Vision API
+router.post('/image-to-code', async (req, res) => {
+  const { imageBase64, mimeType, model } = req.body;
+  try {
+    if (!imageBase64 || !imageBase64.trim()) {
+      return res.status(400).json({ error: 'Image data is required' });
+    }
+    const code = await generateCodeFromImage(imageBase64, mimeType || 'image/jpeg', model);
+    res.json({ code });
+  } catch (err) {
+    console.error('Image-to-code error:', err);
     res.status(500).json({ error: 'Gemini API error', details: err.message });
   }
 });

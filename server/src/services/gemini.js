@@ -442,4 +442,205 @@ Return the COMPLETE fixed code in a code block. Make sure it's the entire compon
   return generateCode(repairPrompt, modelOverride, options);
 }
 
-module.exports = { generateCode, fixCode, editCode };
+// Generate code from image using Gemini Vision API
+async function generateCodeFromImage(imageBase64, mimeType = 'image/jpeg', modelOverride, options = {}) {
+  if (!GEMINI_API_KEY) throw new Error('Missing GEMINI_API_KEY');
+  const url = buildGenerateUrl(modelOverride);
+  
+  // Remove data URL prefix if present
+  const base64Data = imageBase64.includes(',') 
+    ? imageBase64.split(',')[1] 
+    : imageBase64;
+  
+  // Build specialized prompt for image-to-code conversion
+  const imagePrompt = `You are an expert UI/UX designer and React developer specializing in pixel-perfect code generation from design images. Your task is to analyze the provided image and generate COMPLETE, production-ready React component code that accurately recreates the design.
+
+CRITICAL REQUIREMENTS - ANALYZE THE IMAGE CAREFULLY:
+
+1. **VISUAL ANALYSIS** - Examine the image in detail:
+   - Identify ALL visual elements: buttons, text, images, icons, cards, forms, navigation bars, headers, footers
+   - Note exact colors, gradients, shadows, borders, spacing, padding, margins
+   - Observe layout structure: flexbox, grid, positioning
+   - Identify typography: font sizes, weights, line heights, text colors
+   - Note interactive elements: hover states, active states, disabled states
+   - Observe responsive patterns if visible
+
+2. **ACCURACY REQUIREMENTS**:
+   - Match colors EXACTLY (use hex codes or Tailwind color names that match)
+   - Recreate spacing and sizing as closely as possible
+   - Preserve layout structure and component hierarchy
+   - Include ALL visible text content
+   - Match font sizes and weights accurately
+   - Recreate shadows, borders, and visual effects
+   - Preserve alignment and positioning
+
+3. **CODE REQUIREMENTS**:
+   - Generate the ENTIRE, COMPLETE component in a SINGLE response
+   - DO NOT use import statements - React is global
+   - DO NOT use export statements - assign to window.MainComponent
+   - Use functional components with React hooks
+   - ALWAYS end with: window.MainComponent = YourComponentName;
+   - Use Tailwind CSS utility classes for ALL styling - NO custom CSS
+   - Make it fully responsive and mobile-friendly
+   - Include ALL interactive elements with proper event handlers
+   - Add helpful comments for complex sections
+
+4. **COMPONENT STRUCTURE**:
+   - Break down the design into logical React components if complex
+   - Use proper state management for interactive elements
+   - Include all necessary event handlers (onClick, onChange, etc.)
+   - Ensure all JSX is properly closed and valid
+
+5. **STYLING ACCURACY**:
+   - Match background colors/gradients exactly
+   - Recreate border radius, shadows, and effects
+   - Use appropriate Tailwind spacing utilities (p-, m-, gap-, etc.)
+   - Match typography with Tailwind text utilities
+   - Preserve visual hierarchy with proper sizing
+
+REQUIRED CODE FORMAT:
+\`\`\`jsx
+function ComponentName() {
+  // State declarations
+  const [state, setState] = React.useState(initialValue);
+  
+  // Event handlers
+  const handleAction = () => {
+    // Implementation
+  };
+  
+  // Return complete JSX matching the image
+  return (
+    <div className="min-h-screen bg-[exact-color] p-[exact-spacing]">
+      {/* Recreate ALL elements from the image */}
+    </div>
+  );
+}
+
+// THIS LINE IS ABSOLUTELY MANDATORY
+window.MainComponent = ComponentName;
+\`\`\`
+
+IMPORTANT:
+- Component name should be descriptive (e.g., LandingPage, Dashboard, ProductCard)
+- Use React.useState, React.useEffect, React.useCallback (React is global)
+- All Tailwind classes must be valid and match the design
+- Include placeholder content if text is not clearly readable
+- Make interactive elements functional
+- Ensure the component is pixel-perfect and ready to run
+
+Now analyze the image carefully and generate the COMPLETE React component code that accurately recreates the design shown in the image.`;
+
+  try {
+    console.log('Generating code from image with model:', modelOverride || DEFAULT_MODEL);
+    console.log('Image size:', base64Data.length, 'bytes');
+    console.log('MIME type:', mimeType);
+    
+    const response = await axios.post(
+      url,
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: imagePrompt
+              },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.2, // Lower temperature for more accurate, deterministic output
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 16384, // Increased for complete code generation
+        }
+      },
+      {
+        params: { key: GEMINI_API_KEY },
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 120000, // 120 second timeout for image processing
+      }
+    );
+    
+    if (!response.data) {
+      throw new Error('No response data received from API');
+    }
+    
+    console.log('Response received, extracting text...');
+    const raw = extractTextFromCandidates(response.data);
+    
+    if (!raw || raw.trim().length === 0) {
+      console.error('Empty response. Full API response:', JSON.stringify(response.data, null, 2));
+      throw new Error('Empty response from Gemini API. The API returned no text content. Please try again or check your API key and quota.');
+    }
+    
+    console.log('Raw response length:', raw.length);
+    console.log('Raw response preview:', raw.substring(0, 200));
+    
+    const code = sanitizeToCode(raw);
+    
+    if (!code || code.trim().length === 0) {
+      console.error('Code extraction failed. Raw text:', raw.substring(0, 500));
+      throw new Error('Failed to extract code from API response. Please try again.');
+    }
+    
+    console.log('Extracted code length:', code.length);
+    
+    // Final validation: ensure window.MainComponent exists
+    if (!code.includes('window.MainComponent') && !code.includes('window.MainComponent =')) {
+      console.warn('window.MainComponent not found, attempting to add it...');
+      const componentMatch = code.match(/(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/);
+      if (componentMatch) {
+        const componentName = componentMatch[1];
+        console.log('Found component name:', componentName);
+        return code + `\n\nwindow.MainComponent = ${componentName};`;
+      }
+      console.warn('No component name found, wrapping in default App component');
+      return `function App() {
+  ${code}
+  return <div className="p-4">Component rendered</div>;
+}
+window.MainComponent = App;`;
+    }
+    
+    console.log('Image-to-code generation successful');
+    return code;
+  } catch (error) {
+    console.error('Generate code from image error:', error.message);
+    console.error('Error details:', error.response?.data || error);
+    
+    if (error.response) {
+      const errorData = error.response.data?.error;
+      const errorMessage = errorData?.message || error.message;
+      
+      if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
+        throw new Error(`Gemini API Quota Error: ${errorMessage}\n\nSolutions:\n1. Check your API quota at https://ai.google.dev/usage\n2. Verify billing is set up in Google Cloud Console\n3. Free tier has rate limits - wait a few minutes or upgrade your plan`);
+      }
+      
+      if (errorMessage.includes('API key') || errorMessage.includes('permission')) {
+        throw new Error(`Gemini API Key Error: ${errorMessage}\n\nSolutions:\n1. Verify your GEMINI_API_KEY in the .env file\n2. Make sure the API key is enabled for Gemini API`);
+      }
+      
+      if (errorMessage.includes('model') || errorMessage.includes('not found')) {
+        throw new Error(`Gemini Model Error: ${errorMessage}\n\nAvailable models: gemini-2.5-flash, gemini-2.5-pro`);
+      }
+      
+      throw new Error(`Gemini API error: ${errorMessage}`);
+    }
+    
+    if (error.message.includes('Empty response')) {
+      throw error;
+    }
+    
+    throw new Error(`Image-to-code generation failed: ${error.message}`);
+  }
+}
+
+module.exports = { generateCode, fixCode, editCode, generateCodeFromImage };
