@@ -226,11 +226,26 @@ const VoiceToCode = ({ onCodeGenerated }) => {
           </div>
         )}
 
-        {/* Transcript Display */}
+        {/* Transcript Display - Editable after recording stops */}
         {transcript && (
           <div className="bg-gray-800/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-gray-300 mb-2">Transcript:</h4>
-            <p className="text-sm text-gray-400 italic">"{transcript}"</p>
+            <h4 className="text-sm font-medium text-gray-300 mb-2">
+              Transcript:
+              {!isRecording && (
+                <span className="ml-2 text-xs text-gray-500">(You can edit this before generating code)</span>
+              )}
+            </h4>
+            {isRecording ? (
+              <p className="text-sm text-gray-400 italic">"{transcript}"</p>
+            ) : (
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder="Edit your transcript here..."
+                className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-y min-h-[80px]"
+                rows={3}
+              />
+            )}
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy, FiMic, FiImage, FiBarChart2, FiPackage } from 'react-icons/fi';
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -194,7 +195,7 @@ function App() {
   const [previewKey, setPreviewKey] = useState(0); // To force iframe reload
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [isServerRunning, setIsServerRunning] = useState(false);
-  const [showChat, setShowChat] = useState(true); // Show chat by default
+  const [showChat, setShowChat] = useState(false); // Chat modal closed by default
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [previewError, setPreviewError] = useState(null);
@@ -1780,6 +1781,24 @@ body {
               </div>
               </div>
 
+              {/* Project Chat Button */}
+              <button
+                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                  showChat
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                }`}
+                onClick={() => setShowChat(!showChat)}
+              >
+                <FiMessageCircle className="w-4 h-4" />
+                Project Chat
+                {chatMessages.length > 0 && (
+                  <span className="ml-auto bg-purple-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    {chatMessages.length}
+                  </span>
+                )}
+              </button>
+
               {/* Deploy to Netlify Button */}
               <button
                 className="w-full bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white text-sm px-4 py-2.5 rounded-lg font-medium transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -1875,85 +1894,7 @@ body {
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
               </select>
 
-              {/* Chat Toggle */}
-              <div className="flex gap-2 mt-2">
-              <button
-                  className={`flex-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                    showChat 
-                      ? 'bg-purple-600 text-white' 
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                  onClick={() => setShowChat(!showChat)}
-                >
-                  Chat
-                </button>
-                <button
-                  className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-                >
-                  Visual edits
-                </button>
-              </div>
             </div>
-
-            {/* Chat Messages - Show when chat is active */}
-            {showChat && chatMessages.length > 0 && (
-              <div className="flex-1 overflow-auto p-4 space-y-3 border-t border-gray-700/50 bg-gray-900/30">
-                {chatMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : msg.error
-                          ? 'bg-red-900/30 text-red-300 border border-red-500/30'
-                          : 'bg-gray-700 text-gray-200'
-                      }`}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-            )}
-
-            {/* Chat Input - Only show when chat is active */}
-            {showChat && (
-              <div className="p-4 border-t border-gray-700/50 bg-gray-900/50">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (chatInput.trim()) {
-                          handleChatEdit(chatInput);
-                        }
-                      }
-                    }}
-                    placeholder="Ask AI to edit your code..."
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                disabled={loading}
-                  />
-                  <button
-                    onClick={() => {
-                      if (chatInput.trim()) {
-                        handleChatEdit(chatInput);
-                      }
-                    }}
-                    disabled={loading || !chatInput.trim()}
-                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <FiSend className="w-4 h-4" />
-                  </button>
-                  </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -2154,6 +2095,141 @@ body {
 
         {/* AI Mentor - Always available */}
         <AIMentor />
+
+        {/* Project Chat Modal - Opens as a modal */}
+        <AnimatePresence>
+          {showChat && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowChat(false)}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-2xl h-[80vh] bg-gray-900 border border-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Chat Header */}
+                <div className="px-6 py-4 border-b border-gray-800 bg-gray-900/95 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                      <FiMessageCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-semibold text-white">Project Chat</h2>
+                      <p className="text-xs text-gray-400">Edit and improve your code with AI</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowChat(false)}
+                    className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+                  >
+                    <FiX className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-900">
+                  {chatMessages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4">
+                        <FiMessageCircle className="w-8 h-8 text-gray-600" />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-300 mb-2">No messages yet</h3>
+                      <p className="text-sm text-gray-500 max-w-sm">
+                        Start a conversation by asking AI to edit or improve your code. 
+                        Try: "Make the buttons more rounded" or "Add a dark mode toggle"
+                      </p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, idx) => (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`flex items-start gap-3 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            msg.role === 'user' 
+                              ? 'bg-blue-600' 
+                              : msg.error
+                              ? 'bg-red-600'
+                              : 'bg-purple-600'
+                          }`}>
+                            {msg.role === 'user' ? (
+                              <span className="text-white text-xs font-semibold">U</span>
+                            ) : (
+                              <span className="text-white text-xs font-semibold">AI</span>
+                            )}
+                          </div>
+                          <div className={`rounded-2xl px-4 py-3 ${
+                            msg.role === 'user'
+                              ? 'bg-blue-600 text-white rounded-tr-sm'
+                              : msg.error
+                              ? 'bg-red-900/30 text-red-300 border border-red-500/30 rounded-tl-sm'
+                              : 'bg-gray-800 text-gray-200 border border-gray-700 rounded-tl-sm'
+                          }`}>
+                            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                            {msg.timestamp && (
+                              <p className="text-xs mt-1 opacity-70">
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Chat Input */}
+                <div className="px-6 py-4 border-t border-gray-800 bg-gray-900/95">
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          if (chatInput.trim()) {
+                            handleChatEdit(chatInput);
+                          }
+                        }
+                      }}
+                      placeholder="Ask AI to edit your code... (e.g., 'Make buttons larger', 'Add animations')"
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      disabled={loading}
+                    />
+                    <button
+                      onClick={() => {
+                        if (chatInput.trim()) {
+                          handleChatEdit(chatInput);
+                        }
+                      }}
+                      disabled={loading || !chatInput.trim()}
+                      className="px-5 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
+                    >
+                      {loading ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <>
+                          <FiSend className="w-5 h-5" />
+                          Send
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 Tip: Be specific about what you want to change. The AI will update your code accordingly.
+                  </p>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Code Editor - Slides in from right when toggled */}
         {showCodeEditor && (
