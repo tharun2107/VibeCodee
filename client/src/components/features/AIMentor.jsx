@@ -133,7 +133,7 @@ If this is a coding question, provide working code examples. If it's about learn
               </div>
               <div>
                 <h3 className="text-white font-semibold">AI Mentor</h3>
-                <p className="text-xs text-gray-400">Your coding guide</p>
+                <p className="text-xs text-gray-400">AI coding assistant</p>
               </div>
               <button
                 onClick={() => setIsOpen(false)}

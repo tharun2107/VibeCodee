@@ -2083,12 +2083,13 @@ body {
               )}
               {activeFeaturePanel === 'marketplace' && (
                 <ComponentMarketplace 
+                  currentCode={getCurrentFileContent()}
                   onComponentSelected={(code) => {
                     updateFileContent(activeFileId, code);
                     setActiveFeaturePanel(null); // Close panel after component selection
                   }} 
                 />
-        )}
+              )}
       </div>
           </div>
         )}
