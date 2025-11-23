@@ -3,6 +3,10 @@ import './index.css';
 import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy } from 'react-icons/fi';
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
+import axios from 'axios';
+import LandingPage from './components/LandingPage';
+import Auth from './components/Auth';
+import ProjectDashboard from './components/ProjectDashboard';
 
 // File structure helper - Start with empty project
 const createFileStructure = () => [
@@ -159,6 +163,18 @@ function extractCodeBlock(text) {
 }
 
 function App() {
+  // Routing and Auth State
+  const [view, setView] = useState('landing'); // 'landing', 'auth', 'dashboard', 'editor'
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [user, setUser] = useState(() => {
+    const userData = localStorage.getItem('user');
+    return userData ? JSON.parse(userData) : null;
+  });
+  const [currentProjectId, setCurrentProjectId] = useState(null);
+  const [projectName, setProjectName] = useState('Untitled Project');
+  const [autoSaveTimer, setAutoSaveTimer] = useState(null);
+
+  // Editor State
   const [prompt, setPrompt] = useState('');
   const [fileTree, setFileTree] = useState(createFileStructure());
   const [model, setModel] = useState('gemini-2.5-flash');
@@ -188,6 +204,136 @@ function App() {
   const chatEndRef = useRef(null);
 
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+
+  // Initialize view based on auth state
+  useEffect(() => {
+    if (token && user) {
+      setView('dashboard');
+    } else {
+      setView('landing');
+    }
+  }, []);
+
+  // Auth Handlers
+  const handleAuthSuccess = (newToken, userData) => {
+    setToken(newToken);
+    setUser(userData);
+    setView('dashboard');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+    setView('landing');
+    setCurrentProjectId(null);
+  };
+
+  // Project Management
+  const handleCreateProject = () => {
+    setFileTree(createFileStructure());
+    setConversationHistory([]);
+    setChatMessages([]);
+    setDeployedUrl(null);
+    setCurrentProjectId(null);
+    setProjectName('Untitled Project');
+    setView('editor');
+  };
+
+  const handleOpenProject = async (projectId) => {
+    try {
+      const res = await axios.get(`${apiBase}/projects/${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const project = res.data;
+      
+      setFileTree(project.fileStructure || createFileStructure());
+      setConversationHistory(project.conversationHistory || []);
+      setProjectName(project.name);
+      setCurrentProjectId(projectId);
+      setDeployedUrl(project.deployedLinks?.[project.deployedLinks.length - 1] || null);
+      
+      // Restore chat messages from conversation history
+      const restoredMessages = [];
+      project.conversationHistory?.forEach(conv => {
+        restoredMessages.push({ role: 'user', content: conv.user, timestamp: conv.timestamp });
+        restoredMessages.push({ role: 'assistant', content: conv.response, timestamp: conv.timestamp });
+      });
+      setChatMessages(restoredMessages);
+      
+      setView('editor');
+      toast.success('Project loaded');
+    } catch (error) {
+      toast.error('Failed to load project');
+    }
+  };
+
+  // Auto-save project
+  const saveProject = useCallback(async (silent = false) => {
+    if (!token || !currentProjectId) return;
+
+    try {
+      await axios.put(
+        `${apiBase}/projects/${currentProjectId}`,
+        {
+          name: projectName,
+          fileStructure: fileTree,
+          conversationHistory: conversationHistory,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!silent) toast.success('Project saved');
+    } catch (error) {
+      if (!silent) toast.error('Failed to save project');
+    }
+  }, [token, currentProjectId, projectName, fileTree, conversationHistory, apiBase]);
+
+  // Create new project in database
+  const createProjectInDB = useCallback(async () => {
+    if (!token) return null;
+
+    try {
+      const res = await axios.post(
+        `${apiBase}/projects`,
+        {
+          name: projectName,
+          fileStructure: fileTree,
+          conversationHistory: conversationHistory,
+          deployedLinks: deployedUrl ? [deployedUrl] : [],
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCurrentProjectId(res.data._id);
+      return res.data._id;
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      return null;
+    }
+  }, [token, projectName, fileTree, conversationHistory, deployedUrl, apiBase]);
+
+  // Auto-save on changes (debounced)
+  useEffect(() => {
+    if (!currentProjectId || !token) return;
+
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+    }
+
+    const timer = setTimeout(() => {
+      saveProject(true);
+    }, 2000); // Auto-save after 2 seconds of inactivity
+
+    setAutoSaveTimer(timer);
+    return () => clearTimeout(timer);
+  }, [fileTree, conversationHistory, projectName, currentProjectId, token, saveProject]);
+
+  // Save project when creating first time
+  useEffect(() => {
+    if (view === 'editor' && !currentProjectId && token) {
+      createProjectInDB();
+    }
+  }, [view, currentProjectId, token, createProjectInDB]);
 
   // Check server health
   useEffect(() => {
@@ -575,6 +721,12 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       setActiveTab('preview');
       toast.success('Code fixed successfully!', { id: 'fix' });
       
+      // Add to conversation history
+      const userMsg = { role: 'user', content: 'Fix the errors in the code', timestamp: new Date().toISOString() };
+      const aiMsg = { role: 'assistant', content: 'I\'ve fixed the errors in your code!', timestamp: new Date().toISOString() };
+      setChatMessages(prev => [...prev, userMsg, aiMsg]);
+      setConversationHistory(prev => [...prev, { type: 'fix', user: 'Fix the errors in the code', response: 'Code fixed successfully', timestamp: new Date().toISOString() }]);
+      
     } catch (e) {
       const errorMsg = e.message || 'Fix failed';
       setErrorText(errorMsg);
@@ -654,6 +806,284 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
     }
   }, [apiBase, model, activeFileId, getCurrentFileContent]);
 
+  // Prepare files for Vite + React deployment
+  const prepareFilesForDeployment = useCallback((files) => {
+    // Create a map of existing files by path for quick lookup
+    const fileMap = new Map();
+    files.forEach(file => {
+      const cleanPath = file.path.replace(/^project\//, '');
+      fileMap.set(cleanPath, file.content || '');
+    });
+
+    // Helper to get file content or return default
+    const getFile = (path, defaultContent) => {
+      return fileMap.get(path) || defaultContent;
+    };
+
+    // Find App.jsx content (could be in src/App.jsx or just App.jsx)
+    let appContent = getFile('src/App.jsx', '') || getFile('App.jsx', '');
+    
+    // If App.jsx has window.MainComponent, convert it to proper React export
+    if (appContent && appContent.includes('window.MainComponent')) {
+      // Extract the component name from window.MainComponent = ComponentName
+      const mainComponentMatch = appContent.match(/window\.MainComponent\s*=\s*([A-Z][a-zA-Z0-9]*)/);
+      let componentName = null;
+      
+      if (mainComponentMatch) {
+        componentName = mainComponentMatch[1];
+      }
+      
+      if (componentName) {
+        // Remove window.MainComponent line
+        appContent = appContent
+          .replace(/\s*window\.MainComponent\s*=\s*[^;]+;?\s*/g, '')
+          .trim();
+        
+        // Only add export default to the main component function declaration
+        // CRITICAL: Use word boundaries and only match "function ComponentName" pattern
+        if (!appContent.includes('export default') && !appContent.includes('export {')) {
+          // Check if it's a function declaration: function ComponentName() { ... }
+          // Use a more precise pattern that only matches function declarations
+          const functionPattern = new RegExp(`(^|\\n|\\r)\\s*function\\s+${componentName}\\s*\\(`, 'm');
+          if (functionPattern.test(appContent)) {
+            // Replace ONLY the function declaration with word boundaries
+            appContent = appContent.replace(
+              functionPattern,
+              `$1export default function ${componentName}(`
+            );
+          }
+        }
+      }
+    }
+    
+    // If still no export, try to add it to the last function declaration (likely the main component)
+    if (appContent && !appContent.includes('export default') && !appContent.includes('export {')) {
+      // Find all function declarations (not const/let/var) - use multiline match
+      const functionMatches = [...appContent.matchAll(/(?:^|\n|\r)\s*function\s+([A-Z][a-zA-Z0-9]*)\s*\(/gm)];
+      if (functionMatches.length > 0) {
+        // Get the last function (likely the main component)
+        const lastMatch = functionMatches[functionMatches.length - 1];
+        const funcName = lastMatch[1];
+        const funcPattern = new RegExp(`(^|\\n|\\r)\\s*function\\s+${funcName}\\s*\\(`, 'm');
+        appContent = appContent.replace(
+          funcPattern,
+          `$1export default function ${funcName}(`
+        );
+      }
+    }
+
+    // If no App.jsx found, create a default one
+    if (!appContent) {
+      appContent = `export default function App() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-gray-800 mb-4">Welcome to VibeCode</h1>
+        <p className="text-gray-600 mb-8">Your app will appear here</p>
+      </div>
+    </div>
+  );
+}`;
+    }
+
+    // Get index.html - check root first, then public folder
+    let indexHtml = getFile('index.html', '') || getFile('public/index.html', '');
+    
+    // If index.html is in public folder or doesn't exist, create proper Vite index.html
+    if (!indexHtml || indexHtml.includes('public/')) {
+      indexHtml = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VibeCode App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>`;
+    } else {
+      // Update existing index.html to use Vite's module script
+      if (!indexHtml.includes('type="module"') && !indexHtml.includes('/src/main.jsx')) {
+        indexHtml = indexHtml
+          .replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/gi, '')
+          .replace('</body>', '    <script type="module" src="/src/main.jsx"></script>\n  </body>');
+      }
+    }
+
+    // Prepare the complete file list with all required files
+    const deploymentFiles = [
+      // package.json - Required for npm install and build
+      {
+        path: 'package.json',
+        content: getFile('package.json', `{
+  "name": "vibecode-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react-swc": "^3.7.0",
+    "vite": "^5.4.0",
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.35",
+    "autoprefixer": "^10.4.17"
+  }
+}`)
+      },
+
+      // vite.config.js - Required for Vite build
+      {
+        path: 'vite.config.js',
+        content: getFile('vite.config.js', `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
+
+export default defineConfig({
+  plugins: [react()],
+});`)
+      },
+
+      // tailwind.config.js - Required for Tailwind CSS
+      {
+        path: 'tailwind.config.js',
+        content: getFile('tailwind.config.js', `/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}`)
+      },
+
+      // postcss.config.js - Required for Tailwind CSS processing
+      {
+        path: 'postcss.config.js',
+        content: getFile('postcss.config.js', `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`)
+      },
+
+      // index.html - Must be at root for Vite
+      {
+        path: 'index.html',
+        content: indexHtml
+      },
+
+      // src/main.jsx - Entry point
+      {
+        path: 'src/main.jsx',
+        content: getFile('src/main.jsx', `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);`)
+      },
+
+      // src/App.jsx - Main component
+      {
+        path: 'src/App.jsx',
+        content: (() => {
+          // Check if code uses React. (like React.useState, React.useCallback, etc.)
+          const usesReactDot = /React\.(useState|useEffect|useCallback|useMemo|useRef|useContext|createContext|Component|Fragment)/.test(appContent);
+          
+          // Check if React is already imported
+          const hasReactImport = /^import\s+React[,\s]/.test(appContent) || /^import\s+.*\s+from\s+['"]react['"]/.test(appContent);
+          
+          // If code uses React. but doesn't import React, add the import
+          if (usesReactDot && !hasReactImport) {
+            // Add import at the very beginning
+            return `import React from 'react';\n\n${appContent}`;
+          }
+          
+          return appContent;
+        })()
+      },
+
+      // src/index.css - Basic styles with Tailwind directives (if exists, otherwise minimal)
+      {
+        path: 'src/index.css',
+        content: (() => {
+          const existingCss = getFile('src/index.css', '');
+          // Check if Tailwind directives are already present
+          const hasTailwindDirectives = existingCss.includes('@tailwind') || existingCss.includes('@import');
+          
+          if (hasTailwindDirectives) {
+            return existingCss;
+          }
+          
+          // If no existing CSS or no Tailwind directives, add them
+          if (existingCss && existingCss.trim().length > 0) {
+            // Prepend Tailwind directives to existing CSS
+            return `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+${existingCss}`;
+          }
+          
+          // Default CSS with Tailwind directives
+          return `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}`;
+        })()
+      }
+    ];
+
+    // Add all other files from the project (excluding ones we've already added)
+    const addedPaths = new Set(['package.json', 'vite.config.js', 'tailwind.config.js', 'postcss.config.js', 'index.html', 'src/main.jsx', 'src/App.jsx', 'src/index.css']);
+    
+    files.forEach(file => {
+      const cleanPath = file.path.replace(/^project\//, '');
+      
+      // Skip files we've already added and empty files
+      if (!addedPaths.has(cleanPath) && file.content && file.content.trim().length > 0) {
+        // Skip public/index.html since we use root index.html for Vite
+        if (cleanPath !== 'public/index.html') {
+          deploymentFiles.push({
+            path: cleanPath,
+            content: file.content
+          });
+        }
+      }
+    });
+
+    return deploymentFiles;
+  }, []);
+
   // Handle Netlify deployment
   const handleDeployToNetlify = useCallback(async () => {
     // Collect all files from the project
@@ -664,7 +1094,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       return;
     }
 
-    // Filter out empty files and clean up paths (remove "project/" prefix if present)
+    // Filter out empty files and clean up paths
     const validFiles = allFiles
       .filter(file => file.content && file.content.trim().length > 0)
       .map(file => ({
@@ -676,6 +1106,11 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       toast.error('No valid files to deploy!');
       return;
     }
+
+    // Prepare files for Vite + React deployment (adds required config files)
+    const deploymentFiles = prepareFilesForDeployment(validFiles);
+    
+    console.log('Prepared files for deployment:', deploymentFiles.map(f => f.path));
 
     setDeploying(true);
     toast.loading('Deploying to Netlify...', { id: 'deploy' });
@@ -690,7 +1125,7 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: validFiles,
+          files: deploymentFiles,
           siteName: siteName
         }),
       });
@@ -704,6 +1139,20 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       
       if (data.success && data.url) {
         setDeployedUrl(data.url);
+        
+        // Save deployed URL to project
+        if (currentProjectId && token) {
+          try {
+            await axios.post(
+              `${apiBase}/projects/${currentProjectId}/deploy`,
+              { url: data.url },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (error) {
+            console.error('Failed to save deploy URL:', error);
+          }
+        }
+        
         toast.success(
           <div>
             <p className="font-semibold">Deployed successfully! 🚀</p>
@@ -1024,6 +1473,40 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+  // Routing Logic
+  if (view === 'landing') {
+    return (
+      <>
+        <Toaster position="top-right" />
+        <LandingPage onGetStarted={() => setView('auth')} />
+      </>
+    );
+  }
+
+  if (view === 'auth') {
+    return (
+      <>
+        <Toaster position="top-right" />
+        <Auth onAuthSuccess={handleAuthSuccess} />
+      </>
+    );
+  }
+
+  if (view === 'dashboard') {
+    return (
+      <>
+        <Toaster position="top-right" />
+        <ProjectDashboard
+          token={token}
+          onCreateProject={handleCreateProject}
+          onOpenProject={handleOpenProject}
+          onLogout={handleLogout}
+        />
+      </>
+    );
+  }
+
+  // Editor view (view === 'editor')
   return (
     <>
       <Toaster 
@@ -1053,11 +1536,29 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
       <div className={`${sidebarCollapsed ? 'w-16' : 'w-96'} transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col`}>
         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
           {!sidebarCollapsed && (
-            <div className="flex items-center gap-2">
-              <div className="font-semibold text-base text-white">VibeCode</div>
-              <div className={`flex items-center gap-1 text-xs ${isServerRunning ? 'text-green-400' : 'text-red-400'}`}>
-                <div className={`w-1.5 h-1.5 rounded-full ${isServerRunning ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                {isServerRunning ? 'Online' : 'Offline'}
+            <div className="flex items-center gap-3 flex-1">
+              <button
+                onClick={() => setView('dashboard')}
+                className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white"
+                title="Back to Dashboard"
+              >
+                <FiChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-2 flex-1">
+                <div className="font-semibold text-base text-white">AetherBuild</div>
+                <div className="text-xs text-gray-500">•</div>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  onBlur={() => saveProject()}
+                  className="text-sm bg-transparent border-none outline-none text-gray-300 hover:text-white focus:text-white flex-1 max-w-[200px]"
+                  placeholder="Project name"
+                />
+                <div className={`flex items-center gap-1 text-xs ${isServerRunning ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${isServerRunning ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                  {isServerRunning ? 'Online' : 'Offline'}
+                </div>
               </div>
             </div>
           )}
@@ -1115,6 +1616,15 @@ window.MainComponent = ${fileName.split('.')[0].split('-').map(w => w.charAt(0).
               >
                 <span>{loading ? 'Fixing...' : 'AI Fix'}</span>
                 {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+              </button>
+
+              <button
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                onClick={() => saveProject()}
+                title="Save Project"
+              >
+                <FiSave className="w-4 h-4" />
+                Save Project
               </button>
 
               <div className="flex gap-2">

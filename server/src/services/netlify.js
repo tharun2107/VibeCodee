@@ -640,15 +640,15 @@ async function deployToNetlify(files, siteName) {
     );
   }
 
-  // 3) Install dependencies
+  // 3) Install dependencies (including devDependencies since Vite is needed for build)
   console.log('[deploy] Running npm install...');
-  await runCommand('npm install --omit=dev', projectDir)
-    .catch(async (err) => {
-      // if --omit=dev fails for some reason, fall back to plain npm install
-      console.warn('[deploy] npm install --omit=dev failed, falling back to npm install');
-      console.warn(err.stderr || err.message);
-      await runCommand('npm install', projectDir);
-    });
+  try {
+    await runCommand('npm install', projectDir);
+    console.log('[deploy] Dependencies installed successfully');
+  } catch (err) {
+    console.error('[deploy] npm install failed:', err.stderr || err.message);
+    throw new Error('Failed to install dependencies. Check your package.json.');
+  }
 
   // 4) Run build
   console.log('[deploy] Running npm run build...');
@@ -695,10 +695,10 @@ async function deployToNetlify(files, siteName) {
   console.log('Creating Netlify site with name:', sanitizedName);
 
   const siteRes = await client.post('/sites', { name: sanitizedName });
-  const site = siteRes.data;
-  const siteId = site.id;
+  const createdSite = siteRes.data;
+  const siteId = createdSite.id;
 
-  console.log('Created Netlify site:', siteId, site.name);
+  console.log('Created Netlify site:', siteId, createdSite.name);
 
   // 7) Zip built files and deploy
   console.log(`Creating ZIP from ${builtFiles.length} built files...`);
@@ -727,10 +727,62 @@ async function deployToNetlify(files, siteName) {
     ssl_url: deploy.ssl_url,
   });
 
-  const liveUrl = deploy.ssl_url || deploy.url;
+  // 8) Wait for deploy to be ready and then publish it
+  const deployId = deploy.id;
+  console.log('Waiting for deploy to be ready...');
+  
+  // Poll for deploy to be ready (max 30 seconds)
+  let attempts = 0;
+  let deployReady = false;
+  
+  while (attempts < 30 && !deployReady) {
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    
+    try {
+      const statusResponse = await client.get(`/deploys/${deployId}`);
+      const deployState = statusResponse.data.state;
+      
+      console.log(`Deploy state: ${deployState} (attempt ${attempts + 1})`);
+      
+      if (deployState === 'ready' || deployState === 'prepared') {
+        deployReady = true;
+      } else if (deployState === 'error') {
+        throw new Error('Deploy failed during processing');
+      }
+    } catch (error) {
+      // If we can't check status, try to publish anyway
+      console.log('Could not check deploy status, proceeding to publish...');
+      deployReady = true;
+    }
+    
+    attempts++;
+  }
+
+  // 9) Publish the deploy (make it live)
+  console.log('Publishing deploy...');
+  try {
+    await client.post(`/deploys/${deployId}/restore`, {});
+    console.log('Deployment published successfully');
+  } catch (error) {
+    // If restore fails, check if deploy is already published
+    if (error.response?.status === 404) {
+      console.log('Deploy already published or restore not needed');
+    } else {
+      console.warn('Publish step warning:', error.message);
+      // Continue anyway - the deploy might still be accessible
+    }
+  }
+
+  // Get the site URL (should be available after publishing)
+  const siteResponse = await client.get(`/sites/${siteId}`);
+  const publishedSite = siteResponse.data;
+  
+  const liveUrl = publishedSite.ssl_url || publishedSite.url || deploy.ssl_url || deploy.url;
   if (!liveUrl) {
     throw new Error('Deploy created but no URL returned from Netlify');
   }
+
+  console.log('Deployment complete! Live URL:', liveUrl);
 
   return {
     url: liveUrl,
