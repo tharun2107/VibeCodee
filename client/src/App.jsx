@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy, FiMic, FiImage, FiBarChart2, FiPackage } from 'react-icons/fi';
+import { FiFolder, FiFile, FiPlay, FiSend, FiSettings, FiPlus, FiChevronLeft, FiChevronRight, FiX, FiCode, FiEye, FiTerminal, FiSave, FiDownload, FiTrash2, FiMessageCircle, FiEdit2, FiRefreshCw, FiGlobe, FiExternalLink, FiCopy, FiMic, FiImage, FiBarChart2, FiPackage, FiMonitor, FiTablet, FiSmartphone } from 'react-icons/fi';
 import Editor from '@monaco-editor/react';
 import toast, { Toaster } from 'react-hot-toast';
 import axios from 'axios';
@@ -13,6 +13,27 @@ import ImageToCode from './components/features/ImageToCode';
 import AIMentor from './components/features/AIMentor';
 import PerformanceAnalytics from './components/features/PerformanceAnalytics';
 import ComponentMarketplace from './components/features/ComponentMarketplace';
+
+const DEVICE_PRESETS = {
+  desktop: {
+    id: 'desktop',
+    label: 'Desktop',
+    width: '100%',
+    icon: FiMonitor
+  },
+  tablet: {
+    id: 'tablet',
+    label: 'Tablet',
+    width: 834,
+    icon: FiTablet
+  },
+  mobile: {
+    id: 'mobile',
+    label: 'Mobile',
+    width: 390,
+    icon: FiSmartphone
+  }
+};
 
 // File structure helper - Start with empty project
 const createFileStructure = () => [
@@ -207,8 +228,14 @@ function App() {
   const [deploying, setDeploying] = useState(false); // Deployment status
   const [deployedUrl, setDeployedUrl] = useState(null); // Deployed site URL
   const [activeFeaturePanel, setActiveFeaturePanel] = useState(null); // 'voice' | 'image' | 'analytics' | 'marketplace' | null
+  const [previewDevice, setPreviewDevice] = useState('desktop'); // Device preview mode
   const iframeRef = useRef(null);
   const chatEndRef = useRef(null);
+  const deviceOptions = useMemo(() => Object.values(DEVICE_PRESETS), []);
+  const currentDevicePreset = DEVICE_PRESETS[previewDevice] || DEVICE_PRESETS.desktop;
+  const deviceWidthValue = typeof currentDevicePreset.width === 'number'
+    ? `${currentDevicePreset.width}px`
+    : currentDevicePreset.width;
 
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
@@ -1557,6 +1584,19 @@ body {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  // Close file explorer with Escape
+  useEffect(() => {
+    if (!showFileExplorer) return;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setShowFileExplorer(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showFileExplorer]);
   // Routing Logic
   if (view === 'landing') {
   return (
@@ -1721,7 +1761,7 @@ body {
                 </button>
                 <button
                   className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                  onClick={() => setShowFileExplorer(!showFileExplorer)}
+                  onClick={() => setShowFileExplorer(true)}
                 >
                   <FiFolder className="w-4 h-4" />
                   Files
@@ -1836,15 +1876,6 @@ body {
               )}
             </div>
 
-            {/* File Explorer - Collapsible */}
-            {showFileExplorer && (
-              <div className="px-4 pb-2 max-h-48 overflow-auto border-t border-gray-700/50 pt-2">
-              <div className="space-y-1">
-                {renderFileTree(fileTree)}
-              </div>
-            </div>
-            )}
-
             {/* Error Display */}
             {errorText && (
               <div className="mx-4 mb-2 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
@@ -1902,12 +1933,27 @@ body {
       {/* Main Content Area - Preview First */}
       <div className="flex-1 flex flex-col min-w-0 relative bg-white">
         {/* Top Toolbar - Clean Lovable Style */}
-        <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex items-center justify-between">
+        <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className="text-sm font-medium text-gray-700">Preview</div>
             <div className="text-xs text-gray-500">Last saved version</div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="flex items-center gap-1 border border-gray-200 rounded-full bg-white shadow-inner overflow-hidden">
+              {deviceOptions.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setPreviewDevice(id)}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    previewDevice === id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                  title={`Preview as ${label}`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
             <button
               className={`px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 ${
                 activeTab === 'preview'
@@ -1964,15 +2010,27 @@ body {
         {/* Preview Area - Full Screen by Default */}
         <div className="flex-1 min-h-0 relative">
           {activeTab === 'preview' && (
-            <div className="absolute inset-0">
-              <iframe 
-                ref={iframeRef}
-                key={previewKey}
-                srcDoc={previewSource}
-                title="preview"
-                className="w-full h-full bg-white" 
-                sandbox="allow-scripts allow-same-origin"
-              />
+            <div className="absolute inset-0 bg-gray-100 flex items-center justify-center p-4 overflow-auto">
+              <div
+                className={`h-full w-full max-h-full transition-all duration-300 ${
+                  previewDevice === 'desktop'
+                    ? ''
+                    : 'rounded-[2rem] border border-gray-300 shadow-2xl bg-gray-900/5 p-4'
+                }`}
+                style={{
+                  width: '100%',
+                  maxWidth: previewDevice === 'desktop' ? '100%' : deviceWidthValue
+                }}
+              >
+                <iframe 
+                  ref={iframeRef}
+                  key={previewKey}
+                  srcDoc={previewSource}
+                  title="preview"
+                  className={`w-full h-full bg-white ${previewDevice === 'desktop' ? '' : 'rounded-[1.5rem]'}`} 
+                  sandbox="allow-scripts allow-same-origin"
+                />
+              </div>
             </div>
           )}
           {activeTab === 'console' && (
@@ -2232,6 +2290,50 @@ body {
           )}
         </AnimatePresence>
 
+        {/* File Explorer Modal */}
+        <AnimatePresence>
+          {showFileExplorer && (
+            <>
+              <motion.div
+                key="file-explorer-backdrop"
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowFileExplorer(false)}
+              />
+              <motion.div
+                key="file-explorer-panel"
+                className="fixed right-0 top-0 bottom-0 w-full max-w-sm sm:max-w-md bg-gray-950/95 border-l border-gray-800 z-50 shadow-2xl flex flex-col"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-gray-900/80">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">File Explorer</h3>
+                    <p className="text-xs text-gray-400">Manage project files from here</p>
+                  </div>
+                  <button
+                    onClick={() => setShowFileExplorer(false)}
+                    className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                    title="Close File Explorer"
+                  >
+                    <FiX className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                  {renderFileTree(fileTree)}
+                </div>
+                <div className="px-5 py-3 border-t border-gray-800 text-xs text-gray-500">
+                  Double-click any file/folder to rename. Press Esc or click outside to close.
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
         {/* Code Editor - Slides in from right when toggled */}
         {showCodeEditor && (
           <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gray-900 border-l border-gray-800 flex flex-col shadow-2xl z-50 animate-slide-in-right">
@@ -2274,9 +2376,9 @@ body {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowFileExplorer(!showFileExplorer)}
+                  onClick={() => setShowFileExplorer(true)}
                   className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-                  title="Toggle File Explorer"
+                  title="Open File Explorer"
                 >
                   <FiFolder className="w-4 h-4" />
                 </button>
@@ -2289,24 +2391,6 @@ body {
                 </button>
               </div>
             </div>
-
-            {/* File Explorer - Inside Code Editor */}
-            {showFileExplorer && (
-              <div className="border-b border-gray-700 bg-gray-800/50 p-2 max-h-40 overflow-auto">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-purple-300">Files</label>
-                <button 
-                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
-                    onClick={() => setShowFileExplorer(false)}
-                >
-                    <FiX className="w-3 h-3" />
-                </button>
-              </div>
-                <div className="space-y-1">
-                  {renderFileTree(fileTree)}
-            </div>
-              </div>
-            )}
 
             {/* Monaco Editor */}
             <div className="flex-1">
