@@ -9,7 +9,7 @@ const ProjectDashboard = ({ token, onCreateProject, onOpenProject, onLogout }) =
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
   useEffect(() => {
     const userData = localStorage.getItem('user');

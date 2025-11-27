@@ -10,8 +10,8 @@ const Auth = ({ onAuthSuccess }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
+  const apiBase = import.meta.env.VITE_API_BASE || 'https://aetherbuild.onrender.com/api';
+console.log(apiBase);
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {

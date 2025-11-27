@@ -195,7 +195,8 @@ const FeaturesSection = () => {
       description: 'Your code and data are secure. All projects are private to your account.',
     },
   ];
-
+  const apiBase = import.meta.env.VITE_API_URL;
+console.log(apiBase);
   return (
     <section id="features" className="relative py-20 sm:py-32 bg-gray-950 overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(139,92,246,0.05),transparent_50%)]"></div>
