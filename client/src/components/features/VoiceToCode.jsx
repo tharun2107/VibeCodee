@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiMic, FiMicOff, FiPlay, FiSquare, FiVolume2 } from 'react-icons/fi';
 
@@ -15,12 +15,46 @@ const VoiceToCode = ({ onCodeGenerated }) => {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Stop speech recognition
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+      // Stop media stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      // Stop audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+      // Cancel animation frame
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   // Voice recognition setup
   const startRecording = async () => {
     try {
+      // Check if Speech Recognition API is available
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        toast.error('Speech Recognition is not supported in this browser. Please use Chrome or Edge.');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -34,18 +68,21 @@ const VoiceToCode = ({ onCodeGenerated }) => {
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
 
       const updateAudioLevel = () => {
-        analyserRef.current.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setAudioLevel(average / 255); // Normalize to 0-1
-        animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+        if (analyserRef.current) {
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          setAudioLevel(average / 255); // Normalize to 0-1
+          animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+        }
       };
       updateAudioLevel();
 
       // Setup Web Speech API
-      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
+      recognitionRef.current = recognition;
 
       recognition.onresult = (event) => {
         let finalTranscript = '';
@@ -54,19 +91,49 @@ const VoiceToCode = ({ onCodeGenerated }) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += transcript;
+            finalTranscript += transcript + ' ';
           } else {
             interimTranscript += transcript;
           }
         }
 
-        setTranscript(finalTranscript + interimTranscript);
+        setTranscript(prev => {
+          // Only append new final results, replace interim results
+          const newFinal = finalTranscript.trim();
+          if (newFinal) {
+            return prev.trim() + ' ' + newFinal;
+          }
+          return prev.trim() + interimTranscript;
+        });
       };
 
       recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        toast.error('Voice recognition error. Please try again.');
-        stopRecording();
+        if (event.error === 'no-speech') {
+          // This is normal, just means no speech detected yet
+          return;
+        }
+        toast.error(`Voice recognition error: ${event.error}. Please try again.`);
+        if (event.error === 'not-allowed' || event.error === 'aborted') {
+          stopRecording();
+        }
+      };
+
+      recognition.onend = () => {
+        // If recording is still active, restart recognition (for continuous mode)
+        // Use a small delay to avoid immediate restart issues
+        if (recognitionRef.current) {
+          setTimeout(() => {
+            if (recognitionRef.current && isRecording) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                // Recognition might already be starting, ignore
+                console.log('Recognition restart skipped:', e.message);
+              }
+            }
+          }, 100);
+        }
       };
 
       recognition.start();
@@ -75,26 +142,43 @@ const VoiceToCode = ({ onCodeGenerated }) => {
 
     } catch (error) {
       console.error('Error starting recording:', error);
-      toast.error('Could not access microphone. Please check permissions.');
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        toast.error('Microphone permission denied. Please allow microphone access and try again.');
+      } else {
+        toast.error('Could not access microphone. Please check permissions.');
+      }
     }
   };
 
   const stopRecording = () => {
     setIsRecording(false);
 
+    // Stop speech recognition
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Recognition might already be stopped, ignore
+      }
+      recognitionRef.current = null;
+    }
+
     // Stop media stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
 
     // Stop audio context
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
+      audioContextRef.current = null;
     }
 
     // Cancel animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
 
     setAudioLevel(0);
@@ -153,18 +237,35 @@ const VoiceToCode = ({ onCodeGenerated }) => {
     if (matches) {
       // Return the first code block found
       const match = matches[0].match(/```(?:javascript|jsx|js)?\n?([\s\S]*?)```/);
-      if (match) return match[1].trim();
+      if (match) {
+        let code = match[1].trim();
+        // Ensure window.MainComponent assignment
+        if (!code.includes('window.MainComponent')) {
+          const componentMatch = code.match(/(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/);
+          if (componentMatch) {
+            code += `\n\nwindow.MainComponent = ${componentMatch[1]};`;
+          }
+        }
+        return code;
+      }
     }
 
     // If no code blocks, try to find window.MainComponent assignment
-    const mainComponentRegex = /(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/;
     if (text.includes('window.MainComponent')) {
       return text.trim();
     }
 
     // Try to extract JSX/React code
     if (text.includes('React') || text.includes('JSX') || text.includes('function') || text.includes('const') || text.includes('export')) {
-      return text.trim();
+      let code = text.trim();
+      // Ensure window.MainComponent assignment
+      if (!code.includes('window.MainComponent')) {
+        const componentMatch = code.match(/(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/);
+        if (componentMatch) {
+          code += `\n\nwindow.MainComponent = ${componentMatch[1]};`;
+        }
+      }
+      return code;
     }
 
     return '';

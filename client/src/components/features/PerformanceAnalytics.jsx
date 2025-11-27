@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { FiTrendingUp, FiClock, FiZap, FiHardDrive, FiGlobe, FiBarChart2, FiRefreshCw } from 'react-icons/fi';
 
@@ -6,13 +6,57 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
   const [metrics, setMetrics] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  const flattenFileTree = (nodes = []) => {
+    return nodes.reduce((acc, node) => {
+      if (node.type === 'file') {
+        acc.push(node);
+      }
+      if (node.children) {
+        acc.push(...flattenFileTree(node.children));
+      }
+      return acc;
+    }, []);
+  };
+
+  const insightNotes = useMemo(() => {
+    if (!metrics) return [];
+    const notes = [];
+
+    if (metrics.complexityScore >= 70) {
+      notes.push('Complexity is getting high — consider refactoring large components.');
+    } else if (metrics.complexityScore <= 40) {
+      notes.push('Structure looks clean and maintainable. Keep it up!');
+    }
+
+    if (metrics.consoleLogs > 0) {
+      notes.push(`Detected ${metrics.consoleLogs} console statements. Remove them before shipping.`);
+    }
+
+    if (metrics.inlineStyles > 5) {
+      notes.push('A lot of inline styles detected. Consider extracting them to Tailwind or CSS files.');
+    }
+
+    if (metrics.accessibilityTags < 3) {
+      notes.push('Add more semantic or aria-* attributes to improve accessibility.');
+    } else {
+      notes.push('Great! Accessibility attributes detected in this file.');
+    }
+
+    if (metrics.hooks > 5) {
+      notes.push('Many hooks in a single file. Split logic into custom hooks or smaller components.');
+    }
+
+    return notes;
+  }, [metrics]);
+
   // Analyze current code for performance metrics
   const analyzePerformance = () => {
     setIsAnalyzing(true);
 
     // Simulate analysis (in real app, this would call an API)
     setTimeout(() => {
-      const currentFile = fileTree.find(f => f.id === activeFileId);
+      const flatFiles = flattenFileTree(fileTree);
+      const currentFile = flatFiles.find(f => f.id === activeFileId);
       const code = currentFile?.content || '';
 
       // Calculate metrics
@@ -20,6 +64,9 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
       const components = (code.match(/function\s+[A-Z]\w*|const\s+[A-Z]\w*\s*=\s*\(/g) || []).length;
       const hooks = (code.match(/use[A-Z]\w*/g) || []).length;
       const imports = (code.match(/^import/gm) || []).length;
+      const consoleLogs = (code.match(/console\.(log|warn|error|info)/g) || []).length;
+      const inlineStyles = (code.match(/style\s*=\s*\{/g) || []).length;
+      const accessibilityTags = (code.match(/aria-|role=|alt="/g) || []).length;
 
       // Estimate bundle size (rough calculation)
       const estimatedBundleSize = Math.round(code.length * 2.5); // Rough estimate
@@ -32,7 +79,18 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
       if (code.includes('console.log')) score -= 10;
       score = Math.max(0, Math.min(100, score));
 
+      const complexityScore = Math.min(
+        100,
+        Math.round(linesOfCode / 4 + components * 5 + hooks * 6 + Math.max(imports - 6, 0) * 3)
+      );
+
+      const maintainabilityScore = Math.max(
+        0,
+        100 - Math.round(linesOfCode / 3 + consoleLogs * 5 + inlineStyles * 2)
+      );
+
       setMetrics({
+        fileName: currentFile?.name || 'Active file',
         linesOfCode,
         components,
         hooks,
@@ -41,6 +99,11 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
         score,
         loadTime: Math.round(Math.random() * 2000 + 500), // Simulated
         renderTime: Math.round(Math.random() * 100 + 20), // Simulated
+        consoleLogs,
+        inlineStyles,
+        accessibilityTags,
+        complexityScore,
+        maintainabilityScore,
       });
 
       setIsAnalyzing(false);
@@ -88,7 +151,9 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
           </div>
           <div>
             <h3 className="text-lg font-semibold text-white">Performance Analytics</h3>
-            <p className="text-sm text-gray-400">AI-powered code insights</p>
+            <p className="text-sm text-gray-400">
+              {metrics?.fileName ? `Analyzing: ${metrics.fileName}` : 'AI-powered code insights'}
+            </p>
           </div>
         </div>
         <motion.button
@@ -150,38 +215,90 @@ const PerformanceAnalytics = ({ fileTree, activeFileId }) => {
               unit="KB"
               description="Estimated bundle size"
             />
+            <MetricCard
+              icon={FiZap}
+              title="Complexity"
+              value={metrics.complexityScore}
+              description="Computed complexity index"
+            />
+            <MetricCard
+              icon={FiClock}
+              title="Maintainability"
+              value={metrics.maintainabilityScore}
+              description="Higher is easier to maintain"
+            />
           </div>
 
-          {/* Suggestions */}
-          <div className="bg-gray-800/30 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <FiTrendingUp className="w-4 h-4" />
-              Optimization Suggestions
-            </h4>
-            <ul className="space-y-2 text-sm text-gray-300">
-              {metrics.hooks > 5 && (
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
-                  Consider reducing the number of hooks for better performance
-                </li>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Suggestions */}
+            <div className="bg-gray-800/30 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <FiTrendingUp className="w-4 h-4" />
+                Optimization Suggestions
+              </h4>
+              <ul className="space-y-2 text-sm text-gray-300">
+                {metrics.hooks > 5 && (
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                    Consider reducing the number of hooks for better performance
+                  </li>
+                )}
+                {metrics.imports > 10 && (
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                    High number of imports - consider code splitting
+                  </li>
+                )}
+                {metrics.linesOfCode > 200 && (
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                    Consider breaking down into smaller components
+                  </li>
+                )}
+                {metrics.consoleLogs > 0 && (
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                    Remove console statements before deployment
+                  </li>
+                )}
+                {metrics.inlineStyles > 5 && (
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-pink-500 rounded-full"></div>
+                    Extract inline styles into reusable classes
+                  </li>
+                )}
+                {metrics.hooks <= 5 &&
+                  metrics.imports <= 10 &&
+                  metrics.linesOfCode <= 200 &&
+                  metrics.consoleLogs === 0 &&
+                  metrics.inlineStyles <= 5 && (
+                    <li className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                      Code looks well-structured!
+                    </li>
+                  )}
+              </ul>
+            </div>
+
+            {/* Insight Notes */}
+            <div className="bg-gray-800/30 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <FiTrendingUp className="w-4 h-4" />
+                Deep Insights
+              </h4>
+              {insightNotes.length === 0 ? (
+                <p className="text-sm text-gray-400">No additional insights detected.</p>
+              ) : (
+                <ul className="space-y-2 text-sm text-gray-300">
+                  {insightNotes.map((note, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 bg-purple-500 rounded-full mt-1.5"></div>
+                      {note}
+                    </li>
+                  ))}
+                </ul>
               )}
-              {metrics.imports > 10 && (
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
-                  High number of imports - consider code splitting
-                </li>
-              )}
-              {metrics.linesOfCode > 200 && (
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
-                  Consider breaking down into smaller components
-                </li>
-              )}
-              <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                Code looks well-structured!
-              </li>
-            </ul>
+            </div>
           </div>
         </div>
       ) : (

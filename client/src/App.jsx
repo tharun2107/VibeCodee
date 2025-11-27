@@ -122,6 +122,7 @@ const collectAllFiles = (nodes, basePath = '') => {
     if (node.type === 'file') {
       const filePath = basePath ? `${basePath}/${node.name}` : node.name;
       files.push({
+        id: node.id,
         path: filePath,
         name: node.name,
         content: node.content || ''
@@ -236,6 +237,40 @@ function App() {
   const deviceWidthValue = typeof currentDevicePreset.width === 'number'
     ? `${currentDevicePreset.width}px`
     : currentDevicePreset.width;
+  const projectContext = useMemo(() => {
+    const allFiles = collectAllFiles(fileTree);
+    const totalLines = allFiles.reduce((sum, file) => {
+      if (!file.content) return sum;
+      return sum + file.content.split('\n').length;
+    }, 0);
+    const activeFileEntry = allFiles.find(file => file.id === activeFileId);
+    const recentInteractions = conversationHistory.slice(-5);
+    const summaryParts = [
+      `${projectName}`,
+      `${allFiles.length} file${allFiles.length === 1 ? '' : 's'}`,
+      `${totalLines} lines`,
+      activeFileEntry?.name ? `focused on ${activeFileEntry.name}` : null,
+    ].filter(Boolean);
+    const suggestedQuestions = [
+      activeFileEntry?.name && `Give me a walkthrough of ${activeFileEntry.name}`,
+      activeFileEntry?.name && `What improvements can I add to ${activeFileEntry.name}?`,
+      recentInteractions.length > 0 && `Summarize the last ${recentInteractions.length} AI interactions`,
+      'Suggest the next best enhancement for this project',
+    ].filter(Boolean);
+
+    return {
+      projectName,
+      totalFiles: allFiles.length,
+      totalLines,
+      activeFileName: activeFileEntry?.name || null,
+      activeFilePath: activeFileEntry?.path || null,
+      activeFileContent: activeFileEntry?.content || '',
+      recentInteractions,
+      summary: summaryParts.join(' • '),
+      suggestedQuestions,
+      deployedUrl,
+    };
+  }, [fileTree, activeFileId, projectName, conversationHistory, deployedUrl]);
 
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
@@ -2153,7 +2188,7 @@ body {
         )}
 
         {/* AI Mentor - Always available */}
-        <AIMentor />
+        <AIMentor projectContext={projectContext} />
 
         {/* Project Chat Modal - Opens as a modal */}
         <AnimatePresence>

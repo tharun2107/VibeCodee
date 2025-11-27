@@ -679,7 +679,7 @@ async function deployToNetlify(files, siteName) {
   const builtFiles = await collectBuiltFiles(outputDir);
   console.log('[deploy] Built file count:', builtFiles.length);
 
-  // 6) Create Netlify site
+  // 6) Create or re-use Netlify site
   const client = getNetlifyClient();
 
   // Sanitize site name while preserving aetherbuild prefix
@@ -701,37 +701,75 @@ async function deployToNetlify(files, siteName) {
     sanitizedName = `aetherbuild-project-${Date.now()}`;
   }
 
-  console.log('Creating Netlify site with name:', sanitizedName);
+  console.log('Looking for existing Netlify site with name:', sanitizedName);
 
-  const siteRes = await client.post('/sites', { name: sanitizedName });
-  const createdSite = siteRes.data;
-  const siteId = createdSite.id;
+  let siteId;
+  let siteSlug = sanitizedName;
 
-  console.log('Created Netlify site:', siteId, createdSite.name);
-
-  // Disable password protection on the site
-  try {
-    console.log('Disabling password protection...');
-    // Try multiple approaches to ensure password protection is disabled
-    await client.patch(`/sites/${siteId}`, {
-      password: null,
-      visitor_access: 'public' // Ensure public access
-    });
-    console.log('Password protection disabled');
-  } catch (error) {
-    // If PATCH doesn't work, try updating access settings via site settings
+  // Helper to find an existing site by name
+  async function findExistingSiteByName(name) {
+    // First try direct lookup (Netlify allows lookup by subdomain/slug)
     try {
-      console.log('Trying alternative method to disable password protection...');
-      // Some Netlify accounts might need this approach
-      await client.put(`/sites/${siteId}/access`, {
-        password: null
+      const directRes = await client.get(`/sites/${name}`);
+      if (directRes?.data) {
+        return directRes.data;
+      }
+    } catch (directErr) {
+      if (directErr.response?.status !== 404) {
+        console.warn('[deploy] Direct site lookup failed:', directErr.message);
+      }
+    }
+
+    // Fallback: list sites (paged) and search
+    try {
+      let page = 1;
+      const perPage = 100;
+      while (page <= 10) { // avoid infinite loops
+        const listRes = await client.get('/sites', {
+          params: { page, per_page: perPage },
+        });
+        const sites = listRes.data || [];
+        const hit = sites.find((site) => site.name === name);
+        if (hit) return hit;
+        if (sites.length < perPage) break;
+        page += 1;
+      }
+    } catch (listErr) {
+      console.warn('[deploy] Site list lookup failed:', listErr.message);
+    }
+
+    return null;
+  }
+
+  const existingSite = await findExistingSiteByName(sanitizedName);
+
+  if (existingSite) {
+    siteId = existingSite.id;
+    siteSlug = existingSite.name;
+    console.log('[deploy] Reusing existing Netlify site:', siteId, siteSlug);
+  } else {
+    console.log('[deploy] No existing site found, creating a new one...');
+    const siteRes = await client.post('/sites', { name: sanitizedName });
+    const createdSite = siteRes.data;
+    siteId = createdSite.id;
+    siteSlug = createdSite.name;
+    console.log('Created Netlify site:', siteId, createdSite.name);
+  }
+
+  async function ensureSiteIsPublic() {
+    try {
+      await client.patch(`/sites/${siteId}`, {
+        password: null,
+        password_protected: false,
+        branch_password_protected: false,
       });
-      console.log('Password protection disabled via access endpoint');
-    } catch (error2) {
-      console.warn('Could not disable password protection (may not be needed):', error2.message);
-      // Continue anyway - the site might not have password protection enabled
+      console.log('[deploy] Confirmed site is public (password cleared).');
+    } catch (error) {
+      console.warn('[deploy] Could not explicitly clear password:', error.response?.data || error.message);
     }
   }
+
+  await ensureSiteIsPublic();
 
   // 7) Zip built files and deploy
   console.log(`Creating ZIP from ${builtFiles.length} built files...`);
@@ -806,6 +844,8 @@ async function deployToNetlify(files, siteName) {
     }
   }
 
+  await ensureSiteIsPublic();
+
   // Get the site URL (should be available after publishing)
   const siteResponse = await client.get(`/sites/${siteId}`);
   const publishedSite = siteResponse.data;
@@ -821,6 +861,7 @@ async function deployToNetlify(files, siteName) {
     url: liveUrl,
     siteId,
     deployId: deploy.id,
+    siteName: siteSlug,
   };
 }
 

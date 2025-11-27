@@ -77,7 +77,7 @@ window.MainComponent = TodoList;`,
       downloads: 1250,
       rating: 4.8,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 2,
@@ -120,7 +120,7 @@ window.MainComponent = WeatherCard;`,
       downloads: 890,
       rating: 4.6,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1501973801540-537f08ccae7b?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 3,
@@ -201,7 +201,7 @@ window.MainComponent = NavigationMenu;`,
       downloads: 2100,
       rating: 4.9,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 4,
@@ -314,7 +314,7 @@ window.MainComponent = DataTable;`,
       downloads: 750,
       rating: 4.7,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 5,
@@ -403,7 +403,7 @@ window.MainComponent = ModernNavbar;`,
       downloads: 3200,
       rating: 4.9,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 6,
@@ -519,7 +519,7 @@ window.MainComponent = ContactForm;`,
       downloads: 1850,
       rating: 4.8,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1523475472560-d2df97ec485c?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 7,
@@ -621,7 +621,7 @@ window.MainComponent = TicTacToe;`,
       downloads: 950,
       rating: 4.7,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1521791055366-0d553872125f?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 8,
@@ -720,7 +720,7 @@ window.MainComponent = MemoryGame;`,
       downloads: 650,
       rating: 4.6,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=800&q=80',
     },
     {
       id: 9,
@@ -827,7 +827,7 @@ window.MainComponent = SnakeGame;`,
       downloads: 1200,
       rating: 4.8,
       author: 'AetherBuild',
-      preview: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop',
+      preview: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80',
     },
   ];
 
@@ -881,29 +881,86 @@ window.MainComponent = SnakeGame;`,
     let finalCode = selectedComponent.code;
 
     if (integrationMode === 'merge' && currentCode && currentCode.trim()) {
-      // Merge with existing code using AI-like logic
-      if (integrationInstructions.trim()) {
-        // User provided specific instructions - we'll append the component
-        // In a real app, you'd use AI to intelligently merge
-        finalCode = `${currentCode}\n\n// Added ${selectedComponent.name} component\n${selectedComponent.code}`;
-      } else {
-        // Simple merge: append as a new component
-        const existingComponentMatch = currentCode.match(/function\s+(\w+)\s*\(/);
-        const newComponentMatch = selectedComponent.code.match(/function\s+(\w+)\s*\(/);
+      // Merge with existing code - create a wrapper component that renders both
+      const existingComponentMatch = currentCode.match(/(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/);
+      const newComponentMatch = selectedComponent.code.match(/(?:function|const|let|var)\s+([A-Z][a-zA-Z0-9]*)\s*[=\(]/);
+      
+      if (existingComponentMatch && newComponentMatch) {
+        const existingComponentName = existingComponentMatch[1];
+        const newComponentName = newComponentMatch[1];
         
-        if (existingComponentMatch && newComponentMatch) {
-          const existingComponentName = existingComponentMatch[1];
-          const newComponentName = newComponentMatch[1];
+        // Remove window.MainComponent from both existing and new components
+        let existingCode = currentCode.replace(/window\.MainComponent\s*=\s*\w+;?\s*$/m, '').trim();
+        let newComponentCode = selectedComponent.code.replace(/window\.MainComponent\s*=\s*\w+;?\s*$/m, '').trim();
+        
+        // Check if user provided specific integration instructions
+        if (integrationInstructions.trim()) {
+          // Try to intelligently place the component based on instructions
+          const instructions = integrationInstructions.toLowerCase();
           
-          // Remove window.MainComponent from new component
-          let newComponentCode = selectedComponent.code.replace(/window\.MainComponent\s*=\s*\w+;?\s*$/, '').trim();
+          // Create wrapper with positioning based on instructions
+          let wrapperComponent = '';
+          if (instructions.includes('above') || instructions.includes('before') || instructions.includes('top')) {
+            wrapperComponent = `// Wrapper component: ${newComponentName} above ${existingComponentName}
+function MergedApp() {
+  return (
+    <div>
+      <${newComponentName} />
+      <${existingComponentName} />
+    </div>
+  );
+}`;
+          } else if (instructions.includes('below') || instructions.includes('after') || instructions.includes('bottom')) {
+            wrapperComponent = `// Wrapper component: ${existingComponentName} above ${newComponentName}
+function MergedApp() {
+  return (
+    <div>
+      <${existingComponentName} />
+      <${newComponentName} />
+    </div>
+  );
+}`;
+          } else {
+            // Default: new component first (often navbar goes on top)
+            wrapperComponent = `// Wrapper component that combines ${existingComponentName} and ${newComponentName}
+function MergedApp() {
+  return (
+    <div>
+      <${newComponentName} />
+      <${existingComponentName} />
+    </div>
+  );
+}`;
+          }
           
-          // Merge: keep existing component, add new one, update MainComponent
-          finalCode = `${currentCode}\n\n${newComponentCode}\n\n// You can use ${newComponentName} in your ${existingComponentName} component`;
+          finalCode = `${existingCode}\n\n${newComponentCode}\n\n${wrapperComponent}\n\nwindow.MainComponent = MergedApp;`;
         } else {
-          finalCode = `${currentCode}\n\n${selectedComponent.code}`;
+          // Default merge: create wrapper with both components
+          // Typically, navbar-like components go first, then main content
+          const isNavbar = newComponentName.toLowerCase().includes('nav') || 
+                          selectedComponent.name.toLowerCase().includes('nav') ||
+                          selectedComponent.name.toLowerCase().includes('menu');
+          
+          const wrapperComponent = `// Wrapper component that combines ${existingComponentName} and ${newComponentName}
+function MergedApp() {
+  return (
+    <div>
+      ${isNavbar ? `<${newComponentName} />\n      <${existingComponentName} />` : `<${existingComponentName} />\n      <${newComponentName} />`}
+    </div>
+  );
+}`;
+          
+          finalCode = `${existingCode}\n\n${newComponentCode}\n\n${wrapperComponent}\n\nwindow.MainComponent = MergedApp;`;
         }
+      } else {
+        // Fallback: simple append if we can't find component names
+        let existingCode = currentCode.replace(/window\.MainComponent\s*=\s*\w+;?\s*$/m, '').trim();
+        let newComponentCode = selectedComponent.code.replace(/window\.MainComponent\s*=\s*\w+;?\s*$/m, '').trim();
+        finalCode = `${existingCode}\n\n${newComponentCode}\n\n// Note: You need to manually combine these components or assign one to window.MainComponent`;
       }
+    } else {
+      // Replace mode: just use the new component as-is
+      finalCode = selectedComponent.code;
     }
 
     onComponentSelected(finalCode);

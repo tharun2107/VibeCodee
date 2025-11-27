@@ -1,17 +1,25 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiMessageSquare, FiSend, FiUser, FiZap, FiX } from 'react-icons/fi';
-import toast from 'react-hot-toast';
 
-const AIMentor = () => {
+const buildIntroMessage = (context) => {
+  if (!context) {
+    return "Hi! I'm your AI Mentor. I can help explain code, answer project questions, or outline next steps. What would you like to explore?";
+  }
+
+  const { projectName, summary, activeFileName } = context;
+  return `Hey there! I'm your personal mentor for "${projectName}". Right now we're focusing on ${activeFileName || 'your current file'}. Summary: ${summary || 'No summary yet.'} Ask me anything about this project, its code, or the best next move.`;
+};
+
+const AIMentor = ({ projectContext }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState(() => [
     {
-      id: 1,
+      id: 'mentor-intro',
       type: 'ai',
-      content: "Hi! I'm your AI Mentor. I can help you learn React, debug code, explain concepts, or provide coding tips. What would you like to know?",
+      content: buildIntroMessage(projectContext),
       timestamp: new Date(),
-    }
+    },
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -20,12 +28,65 @@ const AIMentor = () => {
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoBottom({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === 'mentor-intro'
+          ? { ...message, content: buildIntroMessage(projectContext), timestamp: new Date() }
+          : message
+      )
+    );
+  }, [projectContext]);
+
+  const buildContextSummary = () => {
+    if (!projectContext) {
+      return 'Project context is not available yet.';
+    }
+
+    const {
+      projectName,
+      summary,
+      totalFiles,
+      totalLines,
+      activeFileName,
+      activeFilePath,
+      activeFileContent,
+      recentInteractions,
+      deployedUrl,
+    } = projectContext;
+
+    const trimmedCode = (activeFileContent || '').slice(0, 1500);
+    const formattedHistory = recentInteractions
+      .map((entry, index) => {
+        const timestamp = entry.timestamp
+          ? new Date(entry.timestamp).toLocaleString()
+          : `Interaction ${index + 1}`;
+        return `[${timestamp}] (${entry.type || 'interaction'}) Asked: "${entry.user || 'N/A'}" | AI: "${
+          entry.response || 'N/A'
+        }"`;
+      })
+      .join('\n');
+
+    return `
+Project: ${projectName}
+Summary: ${summary || 'No summary yet.'}
+Files: ${totalFiles} total, ${totalLines} lines of code
+Active File: ${activeFileName || 'None selected'} ${activeFilePath ? `(${activeFilePath})` : ''}
+Active File Sample:
+${trimmedCode || 'No active file selected or file is empty.'}
+
+Recent Activity:
+${formattedHistory || 'No interactions recorded yet.'}
+${deployedUrl ? `Live URL: ${deployedUrl}` : ''}
+`.trim();
+  };
 
   const sendMessage = async () => {
     if (!inputMessage.trim()) return;
@@ -42,16 +103,18 @@ const AIMentor = () => {
     setIsTyping(true);
 
     try {
-      const mentorPrompt = `You are an AI Mentor helping a developer learn React and web development. The user asked: "${userMessage.content}"
+      const contextBlock = buildContextSummary();
+      const mentorPrompt = `You are an AI mentor dedicated to a single project. Use the context below to provide authoritative, project-aware help.
 
-Please provide a helpful, educational response that:
-1. Explains concepts clearly
-2. Provides practical examples when relevant
-3. Suggests best practices
-4. Encourages learning and experimentation
-5. Keep responses concise but informative
+Context:
+${contextBlock}
 
-If this is a coding question, provide working code examples. If it's about learning, suggest a learning path.`;
+User question: "${userMessage.content}"
+
+Respond with:
+1. A concise explanation referencing project details.
+2. If applicable, mention specific files, components, or code blocks.
+3. Provide next steps or best-practice suggestions tailored to this project.`;
 
       const res = await fetch(`${apiBase}/generate`, {
         method: 'POST',
@@ -92,13 +155,16 @@ If this is a coding question, provide working code examples. If it's about learn
     }
   };
 
-  const quickQuestions = [
-    "How do I create a React component?",
-    "Explain useState hook",
-    "How to handle forms in React?",
-    "What are React hooks?",
-    "How to optimize React performance?"
-  ];
+  const quickQuestions =
+    projectContext?.suggestedQuestions?.length > 0
+      ? projectContext.suggestedQuestions
+      : [
+          'How do I create a React component?',
+          'Explain useState hook',
+          'How to handle forms in React?',
+          'What are React hooks?',
+          'How to optimize React performance?',
+        ];
 
   return (
     <>
@@ -142,6 +208,24 @@ If this is a coding question, provide working code examples. If it's about learn
                 <FiX className="w-4 h-4 text-gray-400" />
               </button>
             </div>
+
+            {projectContext && (
+              <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/70 text-xs text-gray-300 space-y-1">
+                <p className="text-sm font-semibold text-white">
+                  {projectContext.projectName || 'Current Project'}
+                </p>
+                <p>{projectContext.summary || 'No project summary yet.'}</p>
+                {projectContext.activeFileName && (
+                  <p className="text-gray-400">
+                    Active file: {projectContext.activeFileName}
+                    {projectContext.activeFilePath ? ` (${projectContext.activeFilePath})` : ''}
+                  </p>
+                )}
+                <p className="text-gray-500">
+                  Files: {projectContext.totalFiles} • Lines: {projectContext.totalLines}
+                </p>
+              </div>
+            )}
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -202,7 +286,7 @@ If this is a coding question, provide working code examples. If it's about learn
             </div>
 
             {/* Quick Questions */}
-            {messages.length === 1 && (
+            {messages.length === 1 && quickQuestions.length > 0 && (
               <div className="px-4 pb-2">
                 <p className="text-xs text-gray-400 mb-2">Quick questions:</p>
                 <div className="space-y-1">

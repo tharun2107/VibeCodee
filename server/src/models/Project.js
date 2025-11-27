@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const ConversationSchema = new mongoose.Schema({
-  type: { type: String, enum: ['generate', 'fix', 'chat'], required: true },
+  type: { type: String, enum: ['generate', 'fix', 'chat', 'edit'], required: true },
   user: { type: String, required: true },
   response: { type: String, required: true },
   timestamp: { type: Date, default: Date.now }
